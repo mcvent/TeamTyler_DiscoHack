@@ -3,13 +3,14 @@
 Мост между консольным проводником и облачным API
 Обеспечивает работу с облаком как с обычной папкой
 """
-
+import shutil
+from datetime import datetime
 import sys
 import subprocess
 from pathlib import Path
 
 # Добавляем путь к api модулю
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from api.manager import CloudManager
 from api.providers.yadisk.provider import YandexDiskProvider
@@ -25,10 +26,15 @@ class CloudBridge:
             local_path: Локальная папка, где будут кэшироваться файлы (например, /home/user/YandexDisk)
         """
         self.local_path = local_path
+        self.downloads_path = local_path / 'Downloads'  # ✅ НОВАЯ ПАПКА
+        self.downloads_path.mkdir(parents=True, exist_ok=True)  # ✅ СОЗДАЁМ
         self.manager = CloudManager()
         self.provider = None
         self.current_path = "/"  # Текущий путь в облаке
         self._init_provider()
+
+        self.metadata_file = local_path / '.download_metadata.json'
+        self.download_metadata = self._load_metadata()
 
     def _init_provider(self):
         """Инициализация провайдера Яндекс Диска"""
@@ -198,11 +204,11 @@ class CloudBridge:
 
     def download_file(self, remote_path: str, local_path: Path = None) -> bool:
         """
-        Скачать файл из облака
+        Скачать файл из облака в папку Downloads
 
         Args:
             remote_path: Путь к файлу в облаке
-            local_path: Локальный путь для сохранения (опционально)
+            local_path: Локальный путь (опционально, по умолчанию в Downloads)
 
         Returns:
             True если успешно, False если ошибка
@@ -211,25 +217,147 @@ class CloudBridge:
             print("❌ Облако не подключено")
             return False
 
+        # ✅ Если путь не указан - сохраняем в Downloads
         if local_path is None:
-            local_path = self.local_path / remote_path.lstrip('/')
+            local_path = self._get_download_path(remote_path)
 
         # Создаём родительские папки
         local_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Если файл уже есть, не скачиваем
+        # Если файл уже есть, спрашиваем
         if local_path.exists():
-            print(f"✅ Файл уже скачан: {local_path}")
-            return True
+            print(f"⚠️ Файл уже существует: {local_path.name}")
+            response = input("Перезаписать? (y/N/s - пропустить): ").lower()
+            if response != 'y':
+                if response == 's':
+                    print(f"⏭️ Пропущен: {remote_path}")
+                return False
 
         try:
             print(f"📥 Скачивание {remote_path}...")
-            self.provider.download_file(remote_path, str(local_path))
-            print(f"✅ Скачано: {local_path}")
+            print(f"📁 Сохранение в: {local_path}")
+
+            # Скачиваем с прогрессом
+            self.provider.download_file(remote_path, str(local_path), self._progress_callback)
+
+            # ✅ Сохраняем метаданные
+            file_size = local_path.stat().st_size if local_path.exists() else 0
+            self.download_metadata[str(local_path)] = {
+                'remote_path': remote_path,
+                'downloaded_at': datetime.now().isoformat(),
+                'size': file_size,
+                'name': local_path.name
+            }
+            self._save_metadata()
+
+            print(f"\n✅ Скачано: {local_path}")
             return True
         except Exception as e:
-            print(f"❌ Ошибка скачивания: {e}")
+            print(f"\n❌ Ошибка скачивания: {e}")
             return False
+
+    def _get_download_path(self, remote_path: str) -> Path:
+        """
+        Определить путь для сохранения файла в Downloads
+        """
+        filename = Path(remote_path).name
+
+        # Если файл с таким именем уже есть, добавляем дату
+        download_path = self.downloads_path / filename
+        if download_path.exists():
+            name_without_ext = filename.rsplit('.', 1)[0]
+            ext = f".{filename.rsplit('.', 1)[1]}" if '.' in filename else ''
+            date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+            new_filename = f"{name_without_ext}_{date_str}{ext}"
+            download_path = self.downloads_path / new_filename
+
+        return download_path
+
+    def _progress_callback(self, current: int, total: int):
+        """Callback для отображения прогресса скачивания"""
+        if total > 0:
+            percent = int(current / total * 100)
+            # Используем \r для обновления в одной строке
+            print(f"\r📥 Прогресс: [{percent}%] {current}/{total} байт", end="", flush=True)
+
+    def show_downloads(self) -> str:
+        """Показать список скачанных файлов"""
+        if not self.downloads_path.exists():
+            return "📁 Папка Downloads пуста"
+
+        files = [f for f in self.downloads_path.iterdir() if f.is_file()]
+        if not files:
+            return "📁 Папка Downloads пуста"
+
+        result = "\n📂 СКАЧАННЫЕ ФАЙЛЫ (YandexDisk/Downloads):\n"
+        result += "-" * 70 + "\n"
+
+        for f in sorted(files, key=lambda x: x.stat().st_mtime, reverse=True):
+            size = self._format_size(f.stat().st_size)
+            modified = datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+
+            # Проверяем, откуда скачан
+            meta = self.download_metadata.get(str(f), {})
+            source = meta.get('remote_path', 'неизвестно')
+
+            result += f"📄 {f.name:<35} {size:>10}  {modified}\n"
+            result += f"   └─ источник: {source}\n"
+
+        result += "-" * 70
+        result += f"\n📁 Папка: {self.downloads_path}"
+        result += f"\n📊 Всего файлов: {len(files)}"
+        return result
+
+    def clear_downloads(self, older_than_days: int = None) -> str:
+        """Очистить папку Downloads"""
+        files = [f for f in self.downloads_path.iterdir() if f.is_file()]
+
+        if not files:
+            return "📁 Папка Downloads уже пуста"
+
+        if older_than_days:
+            from datetime import timedelta
+            cutoff = datetime.now() - timedelta(days=older_than_days)
+            deleted = 0
+            for f in files:
+                mtime = datetime.fromtimestamp(f.stat().st_mtime)
+                if mtime < cutoff:
+                    # Удаляем из метаданных
+                    if str(f) in self.download_metadata:
+                        del self.download_metadata[str(f)]
+                    f.unlink()
+                    deleted += 1
+            self._save_metadata()
+            return f"✅ Удалено {deleted} файлов старше {older_than_days} дней"
+
+        # Запрос подтверждения
+        count = len(files)
+        response = input(f"⚠️ Удалить все {count} файлов из Downloads? (y/N): ")
+        if response.lower() == 'y':
+            for f in files:
+                if str(f) in self.download_metadata:
+                    del self.download_metadata[str(f)]
+                f.unlink()
+            self._save_metadata()
+            return f"✅ Удалено {count} файлов"
+        return "❌ Отменено"
+
+    def _load_metadata(self) -> dict:
+        """Загрузить метаданные о скачанных файлах"""
+        if self.metadata_file.exists():
+            import json
+            try:
+                with open(self.metadata_file, 'r') as f:
+                    return json.load(f)
+            except:
+                return {}
+        return {}
+
+    def _save_metadata(self):
+        """Сохранить метаданные"""
+        import json
+        with open(self.metadata_file, 'w') as f:
+            json.dump(self.download_metadata, f, indent=2, default=str)
 
     def open_file(self, filename: str) -> bool:
         """
@@ -271,13 +399,6 @@ class CloudBridge:
     def upload_file(self, local_path: Path, remote_path: str = None) -> bool:
         """
         Загрузить файл в облако
-
-        Args:
-            local_path: Локальный путь к файлу
-            remote_path: Путь в облаке (опционально, по умолчанию в текущую папку)
-
-        Returns:
-            True если успешно
         """
         if not self.provider:
             print("❌ Облако не подключено")
