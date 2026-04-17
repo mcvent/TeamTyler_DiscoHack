@@ -1,4 +1,3 @@
-# commands.py
 from .config import COMMANDS
 from pathlib import Path
 
@@ -90,7 +89,7 @@ class CommandHandler:
     def _cloud_touch(self, args: str) -> str:
         """Создать пустой файл в облаке"""
         if not self.cloud_bridge or not self.cloud_bridge.has_token():
-            return "❌ Облако не подключено. Выполните: token_setup"
+            return "Облако не подключено. Выполните: token_setup"
 
         if not args:
             return "Использование: touch <имя_файла>"
@@ -104,62 +103,62 @@ class CommandHandler:
             tmp.flush()
 
             if self.cloud_bridge.upload_file(Path(tmp.name), remote_path):
-                return f"✅ Файл '{filename}' создан в облаке"
+                return f"Файл '{filename}' создан в облаке"
 
-        return f"❌ Ошибка создания '{filename}'"
+        return f"Ошибка создания '{filename}'"
 
     def _cloud_ls(self, args: str) -> str:
         if not self.cloud_bridge or not self.cloud_bridge.has_token():
-            return "❌ Облако не подключено. Выполните: token_setup"
+            return "Облако не подключено. Выполните: token_setup"
         items = self.cloud_bridge.list_directory()
         if not items:
             return "Папка пуста"
-        result = f"\n☁️ ОБЛАЧНАЯ ПАПКА: {self.cloud_bridge.get_current_path()}\n"
+        result = f"\nОБЛАЧНАЯ ПАПКА: {self.cloud_bridge.get_current_path()}\n"
         result += "-" * 60 + "\n"
         for item in items:
             icon = "📁" if item['is_dir'] else "📄"
-            cloud_icon = "☁️ " if not item.get('downloaded', False) else "✓ "
+            cloud_icon = "☁️ " if not item.get('downloaded', False) else "✓"
             result += f"{icon} {cloud_icon}{item['name']:<30} {item['size']}\n"
         result += "-" * 60
         return result
 
     def _cloud_cd(self, path: str) -> str:
         if not self.cloud_bridge or not self.cloud_bridge.has_token():
-            return "❌ Облако не подключено. Выполните: token_setup"
+            return "Облако не подключено. Выполните: token_setup"
         if not path:
             return "Укажите путь"
         if self.cloud_bridge.change_directory(path):
             return f"Перешли в: {self.cloud_bridge.get_current_path()}"
-        return f"❌ Папка '{path}' не найдена"
+        return f"Папка '{path}' не найдена"
 
     def _cloud_pwd(self) -> str:
         if not self.cloud_bridge or not self.cloud_bridge.has_token():
-            return "❌ Облако не подключено"
-        return f"☁️ {self.cloud_bridge.get_current_path()}"
+            return "Облако не подключено"
+        return f"{self.cloud_bridge.get_current_path()}"
 
     def _cloud_open(self, filename: str) -> str:
         if not self.cloud_bridge or not self.cloud_bridge.has_token():
-            return "❌ Облако не подключено"
+            return "Облако не подключено"
         if not filename:
             return "Укажите имя файла"
         if self.cloud_bridge.open_file(filename):
-            return f"✅ Файл '{filename}' открыт"
-        return f"❌ Не удалось открыть '{filename}'"
+            return f"Файл '{filename}' открыт"
+        return f"Не удалось открыть '{filename}'"
 
     def _cloud_download(self, filename: str) -> str:
         if not self.cloud_bridge or not self.cloud_bridge.has_token():
-            return "❌ Облако не подключено"
+            return "Облако не подключено"
         if not filename:
             return "Укажите имя файла"
         remote_path = self.cloud_bridge.get_current_path().rstrip('/') + '/' + filename
         if self.cloud_bridge.download_file(remote_path):
-            return f"✅ Файл '{filename}' скачан"
-        return f"❌ Не удалось скачать '{filename}'"
+            return f"Файл '{filename}' скачан"
+        return f"Не удалось скачать '{filename}'"
 
     def _token_setup(self) -> str:
         if not self.cloud_bridge:
-            return "❌ Ошибка: облачный мост не инициализирован"
-        print("\n🔐 НАСТРОЙКА ТОКЕНА YANDEX DISK")
+            return "Ошибка: облачный мост не инициализирован"
+        print("\nНАСТРОЙКА ТОКЕНА YANDEX DISK")
         print("=" * 50)
         print("Введите токен Яндекс Диска:")
         print("=" * 50)
@@ -167,14 +166,13 @@ class CommandHandler:
         token = getpass.getpass("Токен: ")
         if token:
             self.cloud_bridge.save_token(token)
-            return "✅ Токен сохранен! Теперь можно использовать облачные команды"
-        return "❌ Токен не введен"
+            return "Токен сохранен! Теперь можно использовать облачные команды"
+        return "Токен не введен"
 
-    # ✅ ИСПРАВЛЕННЫЙ МЕТОД UPLOAD
     def _upload_file(self, args: str) -> str:
         """Загрузить файл в облако"""
         if not self.cloud_bridge or not self.cloud_bridge.has_token():
-            return "❌ Облако не подключено"
+            return "Облако не подключено"
 
         if not args:
             return "Использование: upload <локальный_файл> [облачный_путь]"
@@ -182,37 +180,35 @@ class CommandHandler:
         parts = args.split(maxsplit=1)
         local_path_str = parts[0]
 
-        # ✅ ПРОВЕРЯЕМ ПУТЬ ОТНОСИТЕЛЬНО ТЕКУЩЕЙ ЛОКАЛЬНОЙ ДИРЕКТОРИИ
         local_path = Path(local_path_str)
         if not local_path.is_absolute():
             current_local = self.navigator.get_current_path()
             local_path = current_local / local_path_str
 
-        # ✅ НОРМАЛИЗУЕМ ПУТЬ
         local_path = local_path.resolve()
 
         if not local_path.exists():
-            return f"❌ Файл '{local_path_str}' не существует\nПроверьте: ls | grep {local_path_str}"
+            return f"Файл '{local_path_str}' не существует\nПроверьте: ls | grep {local_path_str}"
 
         if local_path.is_dir():
-            return f"❌ '{local_path.name}' является папкой"
+            return f"'{local_path.name}' является папкой"
 
         remote_path = parts[1] if len(parts) > 1 else None
 
         if self.cloud_bridge.upload_file(local_path, remote_path):
-            return f"✅ Файл '{local_path.name}' загружен в облако"
-        return f"❌ Ошибка загрузки"
+            return f"Файл '{local_path.name}' загружен в облако"
+        return f"Ошибка загрузки"
 
     def _show_downloads(self) -> str:
         """Показать скачанные файлы"""
         if not self.cloud_bridge:
-            return "❌ Облако не подключено"
+            return "Облако не подключено"
         return self.cloud_bridge.show_downloads()
 
     def _clear_downloads(self, args: str) -> str:
         """Очистить папку Downloads"""
         if not self.cloud_bridge:
-            return "❌ Облако не подключено"
+            return "Облако не подключено"
 
         days = None
         if args and args.strip().isdigit():
@@ -223,31 +219,8 @@ class CommandHandler:
     # ============ СИСТЕМНЫЕ КОМАНДЫ ============
 
     def _help(self):
-        return """
-============================================================
-ДОСТУПНЫЕ КОМАНДЫ:
-============================================================
-ЛОКАЛЬНЫЕ:
-  ls, list    - показать содержимое
-  cd <путь>   - перейти в папку
-  pwd         - показать текущий путь
-  openfile    - открыть файл
-
-ОБЛАЧНЫЕ:
-  cls         - показать облачную папку
-  ccd <путь>  - перейти в облачную папку
-  cpwd        - показать облачный путь
-  copen       - открыть файл из облака
-  get         - скачать файл из облака
-  upload      - загрузить файл в облако
-  token_setup - настроить токен
-
-СИСТЕМНЫЕ:
-  help        - справка
-  exit, q     - выход
-============================================================
-"""
+        return
 
     def _exit(self):
         self.running = False
-        return "До свидания!"
+        return

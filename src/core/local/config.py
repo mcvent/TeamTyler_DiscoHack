@@ -17,7 +17,7 @@ COMMANDS = {
     'cloud_open': ['copen', 'cloud_open'],
     'cloud_download': ['get', 'download'],
     'token_setup': ['token_setup', 'tsetup'],
-    'upload': ['upload', 'put', 'up'],  # ✅ ДОБАВИТЬ
+    'upload': ['upload', 'put', 'up'],
     'downloads': ['downloads', 'dl', 'dls'],
     'clear_downloads': ['clear_dl', 'cdl', 'clean'],
     'touch': ['touch'],
