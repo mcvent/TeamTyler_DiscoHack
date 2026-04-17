@@ -1,5 +1,5 @@
 # commands.py
-from core.local.config import COMMANDS
+from .config import COMMANDS
 
 
 class CommandHandler:
