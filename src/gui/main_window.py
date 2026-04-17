@@ -1,27 +1,46 @@
 """Главное окно приложения."""
+import sys
+from pathlib import Path
+from typing import Optional, Dict
+
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QSplitter,
     QMenuBar, QMenu, QToolBar, QStatusBar, QMessageBox,
-    QFileDialog, QSizePolicy
+    QFileDialog, QSizePolicy, QInputDialog, QLabel
 )
-from PyQt6.QtCore import Qt, QSize, pyqtSignal
+from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QAction, QIcon, QKeySequence
-# Импорт для статус-бара
-from PyQt6.QtWidgets import QLabel
 
-from gui.views.side_bar import SideBar
-from gui.views.file_table import FileTableView
-from gui.views.address_bar import AddressBar
-from gui.dialogs.progress_dialog import ProgressDialog
+# Добавляем путь к корню проекта
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from api.common.base_provider import BaseCloudProvider
+from api.common.models import CloudFile
+from api.common.exceptions import CloudError, CloudNotFoundError
 
+from core.local.local_provider import LocalFileSystemProvider
+from core.local.cloud_bridge import CloudBridge
+from core.local.cloud_provider_adapter import CloudProviderAdapter
+
+from .views.side_bar import SideBar
+from .views.file_table import FileTableView
+from .views.address_bar import AddressBar
+from .workers import ListDirectoryWorker, DownloadWorker, UploadWorker, SearchWorker
+from .dialogs.progress_dialog import ProgressDialog
+
+from PyQt6.QtWidgets import QProgressBar
 class MainWindow(QMainWindow):
     """Главное окно облачного менеджера."""
 
     def __init__(self) -> None:
         """Инициализация главного окна."""
         super().__init__()
-        self._current_path = "/"
+        self._current_provider: Optional[BaseCloudProvider] = None
+        self._current_path: str = ""
+        self._providers: Dict[str, BaseCloudProvider] = {}
+        self._list_worker: Optional[ListDirectoryWorker] = None
+
+        self._init_providers()
         self._setup_ui()
         self._setup_menu()
         self._setup_toolbar()
@@ -29,13 +48,26 @@ class MainWindow(QMainWindow):
         self._connect_signals()
         self._load_stylesheet()
 
+        # Начальная загрузка
+        self._navigate_to_provider('local', self._providers['local'].get_mounts_root())
+
+    def _init_providers(self) -> None:
+        """Инициализация провайдеров."""
+        # Локальная ФС
+        self._providers['local'] = LocalFileSystemProvider()
+
+        # Яндекс.Диск через CloudBridge
+        cloud_path = Path.home() / 'YandexDisk'
+        cloud_path.mkdir(parents=True, exist_ok=True)
+        cloud_bridge = CloudBridge(cloud_path)
+        self._providers['cloud'] = CloudProviderAdapter(cloud_bridge)
+
     def _setup_ui(self) -> None:
         """Настройка основного UI."""
         self.setWindowTitle("Cloud Manager")
         self.setMinimumSize(1000, 600)
         self.resize(1200, 800)
 
-        # Центральный виджет
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
@@ -43,7 +75,6 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # Сплиттер для боковой панели и таблицы
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
         # Левая панель
@@ -57,9 +88,10 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.file_table)
 
         splitter.setSizes([280, 920])
-
-        # Добавляем сплиттер в layout с stretch=1
         main_layout.addWidget(splitter, stretch=1)
+
+        # Передаём провайдеры в боковую панель
+        self.side_bar.set_providers(self._providers)
 
     def _setup_menu(self) -> None:
         """Настройка главного меню."""
@@ -87,36 +119,17 @@ class MainWindow(QMainWindow):
 
         file_menu.addSeparator()
 
+        delete_action = QAction(QIcon.fromTheme("edit-delete"), "Удалить", self)
+        delete_action.setShortcut(QKeySequence.StandardKey.Delete)
+        delete_action.triggered.connect(self._on_delete)
+        file_menu.addAction(delete_action)
+
+        file_menu.addSeparator()
+
         exit_action = QAction("Выход", self)
         exit_action.setShortcut(QKeySequence.StandardKey.Quit)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
-
-        # Правка
-        # edit_menu = menubar.addMenu("&Правка")
-        #
-        # copy_action = QAction(QIcon.fromTheme("edit-copy"), "Копировать", self)
-        # copy_action.setShortcut(QKeySequence.StandardKey.Copy)
-        # edit_menu.addAction(copy_action)
-        #
-        # cut_action = QAction(QIcon.fromTheme("edit-cut"), "Вырезать", self)
-        # cut_action.setShortcut(QKeySequence.StandardKey.Cut)
-        # edit_menu.addAction(cut_action)
-        #
-        # paste_action = QAction(QIcon.fromTheme("edit-paste"), "Вставить", self)
-        # paste_action.setShortcut(QKeySequence.StandardKey.Paste)
-        # edit_menu.addAction(paste_action)
-        #
-        # edit_menu.addSeparator()
-        #
-        # delete_action = QAction(QIcon.fromTheme("edit-delete"), "Удалить", self)
-        # delete_action.setShortcut(QKeySequence.StandardKey.Delete)
-        # delete_action.triggered.connect(self._on_delete)
-        # edit_menu.addAction(delete_action)
-        #
-        # rename_action = QAction("Переименовать", self)
-        # rename_action.setShortcut(QKeySequence("F2"))
-        # edit_menu.addAction(rename_action)
 
         # Вид
         view_menu = menubar.addMenu("&Вид")
@@ -132,14 +145,6 @@ class MainWindow(QMainWindow):
         show_hidden_action.setCheckable(True)
         view_menu.addAction(show_hidden_action)
 
-        # Сервис
-        # service_menu = menubar.addMenu("&Сервис")
-        #
-        # settings_action = QAction(QIcon.fromTheme("preferences-system"), "Настройки", self)
-        # settings_action.setShortcut(QKeySequence.StandardKey.Preferences)
-        # settings_action.triggered.connect(self._on_settings)
-        # service_menu.addAction(settings_action)
-
         # Справка
         help_menu = menubar.addMenu("&Справка")
 
@@ -154,31 +159,14 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
 
-        # Навигация
-        back_action = QAction(QIcon.fromTheme("go-previous"), "Назад", self)
-        back_action.setEnabled(False)
-        toolbar.addAction(back_action)
-
-        forward_action = QAction(QIcon.fromTheme("go-next"), "Вперёд", self)
-        forward_action.setEnabled(False)
-        toolbar.addAction(forward_action)
-
-        up_action = QAction(QIcon.fromTheme("go-up"), "Вверх", self)
-        toolbar.addAction(up_action)
-
         toolbar.addSeparator()
 
-        # ВАЖНО: Создаем address_bar и сохраняем как атрибут
+        # Адресная строка
         self.address_bar = AddressBar()
         self.address_bar.setMaximumWidth(600)
         toolbar.addWidget(self.address_bar)
 
         toolbar.addSeparator()
-
-        # Кнопка обновления
-        refresh_action = QAction(QIcon.fromTheme("view-refresh"), "Обновить", self)
-        refresh_action.triggered.connect(self._on_refresh)
-        toolbar.addAction(refresh_action)
 
         # Растягиваем тулбар
         spacer = QWidget()
@@ -208,21 +196,23 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage("Готово")
 
-        # Индикатор количества элементов
-        self.items_label = QLabel("Элементов: 6")
+        # Прогресс-бар для длительных операций
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMaximumWidth(200)
+        self.progress_bar.setMaximumHeight(16)
+        self.progress_bar.setVisible(False)
+        self.status_bar.addPermanentWidget(self.progress_bar)
+
+        self.items_label = QLabel("Элементов: 0")
         self.status_bar.addPermanentWidget(self.items_label)
 
     def _connect_signals(self) -> None:
         """Подключение сигналов."""
-        # Боковая панель
-        self.side_bar.folder_selected.connect(self._on_folder_selected)
-        self.side_bar.add_storage_clicked.connect(self._on_add_storage)
-
-        # Адресная строка
+        self.side_bar.provider_selected.connect(self._on_provider_selected)
+        self.address_bar.search_requested.connect(self._on_search)
         self.address_bar.path_changed.connect(self._on_path_changed)
         self.address_bar.refresh_clicked.connect(self._on_refresh)
-
-        # Таблица файлов
+        self.address_bar.go_up_clicked.connect(self._on_go_up)
         self.file_table.file_double_clicked.connect(self._on_file_double_clicked)
         self.file_table.delete_requested.connect(self._on_files_delete)
         self.file_table.download_requested.connect(self._on_files_download)
@@ -230,41 +220,239 @@ class MainWindow(QMainWindow):
     def _load_stylesheet(self) -> None:
         """Загрузка стилей."""
         try:
-            from pathlib import Path
             style_path = Path(__file__).parent / "resources" / "style.qss"
             if style_path.exists():
                 with open(style_path, "r", encoding="utf-8") as f:
                     self.setStyleSheet(f.read())
+
         except Exception:
-            pass  # Стили не загружены, используем системные
+            pass
 
-    # Обработчики событий (заглушки)
+    # ============ Навигация ============
 
-    def _on_new_folder(self) -> None:
-        """Создание новой папки."""
-        QMessageBox.information(self, "Заглушка", "Создание новой папки")
+    def _navigate_to_provider(self, provider_key: str, path: str) -> None:
+        """Переход к провайдеру и пути."""
+        self._current_provider = self._providers.get(provider_key)
+        if not self._current_provider:
+            return
 
-    def _on_upload(self) -> None:
-        """Загрузка файлов."""
-        files, _ = QFileDialog.getOpenFileNames(self, "Выберите файлы для загрузки")
-        if files:
-            QMessageBox.information(self, "Заглушка", f"Загрузка {len(files)} файлов")
+        self._current_path = path
+        self._load_directory(path)
 
-    def _on_download(self) -> None:
-        """Скачивание файлов."""
-        QMessageBox.information(self, "Заглушка", "Скачивание выбранных файлов")
+    def _load_directory(self, path: str) -> None:
+        """Загрузка содержимого директории."""
+        if not self._current_provider:
+            return
 
-    def _on_delete(self) -> None:
-        """Удаление файлов."""
-        QMessageBox.information(self, "Заглушка", "Удаление выбранных элементов")
+        self.status_bar.showMessage(f"Загрузка {path}...")
+
+        # Отменяем предыдущий воркер
+        if self._list_worker and self._list_worker.isRunning():
+            self._list_worker.terminate()
+            self._list_worker.wait()
+
+        self._list_worker = ListDirectoryWorker(self._current_provider, path)
+        self._list_worker.finished.connect(self._on_directory_loaded)
+        self._list_worker.error.connect(self._on_directory_error)
+        self._list_worker.start()
+
+    def _on_directory_loaded(self, files: list) -> None:
+        """Обработка загрузки директории."""
+        self.file_table.set_files(files, self._current_provider)
+        self.address_bar.set_path(self._current_path)
+        self.items_label.setText(f"Элементов: {len(files)}")
+        self.status_bar.showMessage(f"Загружено {len(files)} элементов")
+
+
+    def _on_directory_error(self, error: str) -> None:
+        """Обработка ошибки загрузки."""
+        self.status_bar.showMessage(f"Ошибка: {error}")
+        self.items_label.setText("Элементов: 0")
+
+    # ============ Обработчики сигналов ============
+
+    def _on_provider_selected(self, provider: BaseCloudProvider, path: str) -> None:
+        """Выбор провайдера в боковой панели."""
+        self._current_provider = provider
+        self._current_path = path
+        self._load_directory(path)
+
+    def _on_path_changed(self, path: str) -> None:
+        """Изменение пути в адресной строке."""
+        self._current_path = path
+        self._load_directory(path)
 
     def _on_refresh(self) -> None:
         """Обновление текущей папки."""
-        self.status_bar.showMessage(f"Обновление {self._current_path}...")
+        if self._current_provider and self._current_path:
+            self._load_directory(self._current_path)
 
-    def _on_settings(self) -> None:
-        """Открытие настроек."""
-        QMessageBox.information(self, "Заглушка", "Открытие окна настроек")
+    def _on_search(self, query: str) -> None:
+        """Поиск файлов рекурсивно."""
+        if not self._current_provider or not self._current_path:
+            return
+
+        if not query:
+            self._load_directory(self._current_path)
+            return
+
+        # Показываем прогресс-бар
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 0)  # Бесконечный прогресс
+        self.status_bar.showMessage(f"🔍 Поиск '{query}'...")
+
+        # Блокируем кнопку поиска
+        self.address_bar.search_btn.setEnabled(False)
+
+        # Запускаем поиск в отдельном потоке
+        self._search_worker = SearchWorker(self._current_provider, self._current_path, query)
+        self._search_worker.finished.connect(self._on_search_finished)
+        self._search_worker.error.connect(self._on_search_error)
+        self._search_worker.start()
+
+    def _on_go_up(self) -> None:
+        """Переход на уровень выше."""
+        if not self._current_provider:
+            return
+
+        parent_path = None
+
+        if hasattr(self._current_provider, 'get_parent_path'):
+            parent_path = self._current_provider.get_parent_path(self._current_path)
+
+        if parent_path and parent_path != self._current_path:
+            self._current_path = parent_path
+            self._load_directory(parent_path)
+            self.address_bar.set_path(parent_path)
+
+    def _on_file_double_clicked(self, file_item: CloudFile) -> None:
+        """Двойной клик по файлу/папке."""
+        if file_item.is_dir:
+            self._current_path = file_item.path
+            self._load_directory(file_item.path)
+        else:
+            self._open_file(file_item)
+
+    def _on_new_folder(self) -> None:
+        """Создание новой папки."""
+        if not self._current_provider:
+            return
+
+        name, ok = QInputDialog.getText(self, "Новая папка", "Имя папки:")
+        if ok and name:
+            try:
+                path = self._current_path.rstrip('/') + '/' + name
+                self._current_provider.create_folder(path)
+                self._on_refresh()
+            except Exception as e:
+                QMessageBox.warning(self, "Ошибка", f"Не удалось создать папку: {e}")
+
+    def _on_upload(self) -> None:
+        """Загрузка файлов."""
+        if not self._current_provider:
+            return
+
+        files, _ = QFileDialog.getOpenFileNames(self, "Выберите файлы для загрузки")
+        if not files:
+            return
+
+        progress = ProgressDialog("Загрузка файлов", self)
+        progress.set_cancellable(False)
+        progress.show()
+
+        success_count = 0
+        for i, file_path in enumerate(files):
+            remote_path = self._current_path.rstrip('/') + '/' + Path(file_path).name
+            progress.set_status(f"Загрузка: {Path(file_path).name}", f"{i+1} из {len(files)}")
+
+            try:
+                self._current_provider.upload_file(file_path, remote_path)
+                success_count += 1
+            except Exception as e:
+                QMessageBox.warning(self, "Ошибка", f"Не удалось загрузить {file_path}: {e}")
+
+        progress.operation_finished(True)
+        self.status_bar.showMessage(f"Загружено {success_count} из {len(files)} файлов")
+        self._on_refresh()
+
+    def _on_download(self) -> None:
+        """Скачивание выбранных файлов."""
+        selected = self.file_table.get_selected_items()
+        if not selected:
+            QMessageBox.information(self, "Инфо", "Выберите файлы для скачивания")
+            return
+
+        dest_dir = QFileDialog.getExistingDirectory(self, "Выберите папку для сохранения")
+        if not dest_dir:
+            return
+
+        progress = ProgressDialog("Скачивание файлов", self)
+        progress.set_cancellable(False)
+        progress.show()
+
+        success_count = 0
+        for i, file_item in enumerate(selected):
+            if file_item.is_dir:
+                continue
+
+            progress.set_status(f"Скачивание: {file_item.name}", f"{i+1} из {len(selected)}")
+            local_path = Path(dest_dir) / file_item.name
+
+            try:
+                self._current_provider.download_file(file_item.path, str(local_path))
+                success_count += 1
+            except Exception as e:
+                QMessageBox.warning(self, "Ошибка", f"Не удалось скачать {file_item.name}: {e}")
+
+        progress.operation_finished(True)
+        self.status_bar.showMessage(f"Скачано {success_count} из {len(selected)} файлов")
+
+    def _on_files_download(self, files: list) -> None:
+        """Скачивание файлов через сигнал."""
+        self._on_download()
+
+    def _on_delete(self) -> None:
+        """Удаление выбранных файлов."""
+        selected = self.file_table.get_selected_items()
+        if not selected:
+            QMessageBox.information(self, "Инфо", "Выберите файлы для удаления")
+            return
+
+        names = [f.name for f in selected]
+        reply = QMessageBox.question(
+            self,
+            "Подтверждение удаления",
+            f"Удалить выбранные элементы?\n\n{', '.join(names[:5])}"
+            + (f"\n... и ещё {len(names)-5}" if len(names) > 5 else ""),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        success_count = 0
+        for file_item in selected:
+            try:
+                self._current_provider.delete_file(file_item.path)
+                success_count += 1
+            except Exception as e:
+                QMessageBox.warning(self, "Ошибка", f"Не удалось удалить {file_item.name}: {e}")
+
+        self.status_bar.showMessage(f"Удалено {success_count} из {len(selected)} элементов")
+        self._on_refresh()
+
+    def _on_files_delete(self, files: list) -> None:
+        """Удаление файлов через сигнал."""
+        self._on_delete()
+
+    def _open_file(self, file_item: CloudFile) -> None:
+        """Открытие файла."""
+        if hasattr(self._current_provider, 'open_file'):
+            success = self._current_provider.open_file(file_item.path)
+            if not success:
+                QMessageBox.warning(self, "Ошибка", f"Не удалось открыть {file_item.name}")
+        else:
+            QMessageBox.information(self, "Инфо", f"Открытие: {file_item.name}")
 
     def _on_about(self) -> None:
         """О программе."""
@@ -277,34 +465,24 @@ class MainWindow(QMainWindow):
             "Версия 0.1"
         )
 
-    def _on_folder_selected(self, path: str) -> None:
-        """Выбор папки в боковой панели."""
-        self._current_path = path
-        self.address_bar.set_path(path)
-        self.status_bar.showMessage(f"Переход в {path}")
+    def _on_search_finished(self, results: list) -> None:
+        """Обработка завершения поиска."""
+        # Скрываем прогресс-бар
+        self.progress_bar.setVisible(False)
+        self.address_bar.search_btn.setEnabled(True)
 
-    def _on_path_changed(self, path: str) -> None:
-        """Изменение пути в адресной строке."""
-        self._current_path = path
-        self.status_bar.showMessage(f"Переход в {path}")
-
-    def _on_file_double_clicked(self, path: str, is_dir: bool) -> None:
-        """Двойной клик по файлу/папке."""
-        if is_dir:
-            self._current_path = path
-            self.address_bar.set_path(path)
-            self.status_bar.showMessage(f"Переход в {path}")
+        if results:
+            self.file_table.set_files(results, self._current_provider)
+            self.items_label.setText(f"Найдено: {len(results)}")
+            self.status_bar.showMessage(f" Найдено {len(results)} элементов по запросу")
+            self.address_bar.set_path(f"🔍 Результаты поиска ({len(results)})")
         else:
-            QMessageBox.information(self, "Заглушка", f"Открытие файла: {path}")
+            QMessageBox.information(self, "Поиск", "Ничего не найдено")
+            self.status_bar.showMessage(" Ничего не найдено")
 
-    def _on_files_delete(self, files: list[str]) -> None:
-        """Удаление файлов."""
-        QMessageBox.information(self, "Заглушка", f"Удаление: {', '.join(files)}")
-
-    def _on_files_download(self, files: list[str]) -> None:
-        """Скачивание файлов."""
-        QMessageBox.information(self, "Заглушка", f"Скачивание: {', '.join(files)}")
-
-    def _on_add_storage(self) -> None:
-        """Добавление облачного хранилища."""
-        QMessageBox.information(self, "Заглушка", "Открытие мастера добавления хранилища")
+    def _on_search_error(self, error: str) -> None:
+        """Обработка ошибки поиска."""
+        self.progress_bar.setVisible(False)
+        self.address_bar.search_btn.setEnabled(True)
+        self.status_bar.showMessage(f" Ошибка поиска: {error}")
+        QMessageBox.warning(self, "Ошибка поиска", error)

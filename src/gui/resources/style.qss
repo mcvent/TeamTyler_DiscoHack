@@ -70,8 +70,9 @@ QTreeView {
 }
 
 QTreeView::item {
-    padding: 6px 8px;
+    padding: 8px 12px;
     border-radius: 4px;
+    margin: 0px;
 }
 
 QTreeView::item:hover {
