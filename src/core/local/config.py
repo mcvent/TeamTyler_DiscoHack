@@ -21,6 +21,7 @@ COMMANDS = {
     'downloads': ['downloads', 'dl', 'dls'],
     'clear_downloads': ['clear_dl', 'cdl', 'clean'],
     'touch': ['touch'],
+
     # Системные
     'help': ['help', 'h', '?'],
     'exit': ['exit', 'quit', 'q'],

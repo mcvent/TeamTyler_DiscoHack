@@ -41,6 +41,7 @@ class CommandHandler:
             return self._clear_downloads(args)
         elif cmd in COMMANDS['touch']:
             return self._cloud_touch(args)  # ← вызываем облачную версию
+
         elif cmd in COMMANDS['help']:
             return self._help()
         elif cmd in COMMANDS['exit']:
