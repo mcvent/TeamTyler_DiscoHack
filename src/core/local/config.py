@@ -1,0 +1,22 @@
+# local/config.py
+from pathlib import Path
+
+DEFAULT_START_PATH = Path.home()
+
+COMMANDS = {
+    # Локальные команды
+    'ls': ['ls', 'list'],
+    'cd': ['cd'],
+    'pwd': ['pwd'],
+    'openfile': ['openfile', 'open'],
+    'help': ['help', 'h', '?'],
+    'exit': ['exit', 'quit', 'q'],
+
+    # Облачные команды
+    'cloud_ls': ['cls', 'cloud_ls'],
+    'cloud_cd': ['ccd', 'cloud_cd'],
+    'cloud_pwd': ['cpwd', 'cloud_pwd'],
+    'cloud_open': ['copen', 'cloud_open'],
+    'cloud_download': ['get', 'download'],
+    'token_setup': ['token_setup', 'tsetup'],
+}
