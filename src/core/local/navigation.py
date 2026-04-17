@@ -1,7 +1,7 @@
 # navigation.py
 import os
 from pathlib import Path
-from core.local.helpers import get_file_info, format_size
+from .helpers import get_file_info, format_size
 
 
 class Navigator:

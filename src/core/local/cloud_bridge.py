@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 
 # Добавляем путь к api модулю
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from api.manager import CloudManager
 from api.providers.yadisk.provider import YandexDiskProvider

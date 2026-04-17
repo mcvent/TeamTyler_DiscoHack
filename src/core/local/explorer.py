@@ -1,10 +1,10 @@
 # local/explorer.py
-from core.local.navigation import Navigator
-from core.local.file_operations import FileOperations
-from core.local.commands import CommandHandler
-from core.local.helpers import clear_screen
-from core.local.config import DEFAULT_START_PATH
-from core.local.cloud_bridge import CloudBridge
+from .navigation import Navigator
+from .file_operations import FileOperations
+from .commands import CommandHandler
+from .helpers import clear_screen
+from .config import DEFAULT_START_PATH
+from .cloud_bridge import CloudBridge
 from pathlib import Path
 
 
