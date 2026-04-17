@@ -1,0 +1,4 @@
+yadisk
+pydantic
+requests
+loguru
