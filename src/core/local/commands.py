@@ -39,6 +39,8 @@ class CommandHandler:
             return self._show_downloads()
         elif cmd in COMMANDS['clear_downloads']:
             return self._clear_downloads(args)
+        elif cmd in COMMANDS['touch']:
+            return self._cloud_touch(args)  # ← вызываем облачную версию
         elif cmd in COMMANDS['help']:
             return self._help()
         elif cmd in COMMANDS['exit']:
@@ -84,6 +86,26 @@ class CommandHandler:
             return f"Ошибка: {e}"
 
     # ============ ОБЛАЧНЫЕ КОМАНДЫ ============
+    def _cloud_touch(self, args: str) -> str:
+        """Создать пустой файл в облаке"""
+        if not self.cloud_bridge or not self.cloud_bridge.has_token():
+            return "❌ Облако не подключено. Выполните: token_setup"
+
+        if not args:
+            return "Использование: touch <имя_файла>"
+
+        filename = args.strip()
+        remote_path = self.cloud_bridge.get_current_path().rstrip('/') + '/' + filename
+
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', delete=True) as tmp:
+            tmp.write("")
+            tmp.flush()
+
+            if self.cloud_bridge.upload_file(Path(tmp.name), remote_path):
+                return f"✅ Файл '{filename}' создан в облаке"
+
+        return f"❌ Ошибка создания '{filename}'"
 
     def _cloud_ls(self, args: str) -> str:
         if not self.cloud_bridge or not self.cloud_bridge.has_token():
