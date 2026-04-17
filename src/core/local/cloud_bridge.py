@@ -271,13 +271,6 @@ class CloudBridge:
     def upload_file(self, local_path: Path, remote_path: str = None) -> bool:
         """
         Загрузить файл в облако
-
-        Args:
-            local_path: Локальный путь к файлу
-            remote_path: Путь в облаке (опционально, по умолчанию в текущую папку)
-
-        Returns:
-            True если успешно
         """
         if not self.provider:
             print("❌ Облако не подключено")
