@@ -35,6 +35,10 @@ class CommandHandler:
             return self._token_setup()
         elif cmd in COMMANDS['upload']:
             return self._upload_file(args)
+        elif cmd in COMMANDS['downloads']:
+            return self._show_downloads()
+        elif cmd in COMMANDS['clear_downloads']:
+            return self._clear_downloads(args)
         elif cmd in COMMANDS['help']:
             return self._help()
         elif cmd in COMMANDS['exit']:
@@ -175,6 +179,23 @@ class CommandHandler:
         if self.cloud_bridge.upload_file(local_path, remote_path):
             return f"✅ Файл '{local_path.name}' загружен в облако"
         return f"❌ Ошибка загрузки"
+
+    def _show_downloads(self) -> str:
+        """Показать скачанные файлы"""
+        if not self.cloud_bridge:
+            return "❌ Облако не подключено"
+        return self.cloud_bridge.show_downloads()
+
+    def _clear_downloads(self, args: str) -> str:
+        """Очистить папку Downloads"""
+        if not self.cloud_bridge:
+            return "❌ Облако не подключено"
+
+        days = None
+        if args and args.strip().isdigit():
+            days = int(args.strip())
+
+        return self.cloud_bridge.clear_downloads(days)
 
     # ============ СИСТЕМНЫЕ КОМАНДЫ ============
 

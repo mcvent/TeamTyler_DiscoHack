@@ -18,6 +18,8 @@ COMMANDS = {
     'cloud_download': ['get', 'download'],
     'token_setup': ['token_setup', 'tsetup'],
     'upload': ['upload', 'put', 'up'],  # ✅ ДОБАВИТЬ
+    'downloads': ['downloads', 'dl', 'dls'],
+    'clear_downloads': ['clear_dl', 'cdl', 'clean'],
 
     # Системные
     'help': ['help', 'h', '?'],
