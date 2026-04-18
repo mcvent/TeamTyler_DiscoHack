@@ -3,7 +3,6 @@ from typing import List, Optional
 from .models import CloudFile
 
 class BaseCloudProvider(ABC):
-    """Интерфейс, который должен реализовать каждый облачный сервис."""
 
     @abstractmethod
     def login(self, token: str) -> bool:
