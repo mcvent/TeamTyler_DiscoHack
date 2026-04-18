@@ -131,7 +131,7 @@ QLineEdit:focus {
 }
 
 QPushButton {
-    background-color: #00FFFF;
+    background-color: #DCDCDC;
     color: white;
     border: none;
     border-radius: 6px;

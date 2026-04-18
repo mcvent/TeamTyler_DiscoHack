@@ -45,9 +45,11 @@ class BaseCloudProvider(ABC):
         pass
 
     @abstractmethod
-    def move_file(self, src: str, dst: str) -> bool:
+    def rename_file(self, old_path: str, new_path: str) -> bool:
         pass
 
     @abstractmethod
-    def rename_file(self, old_path: str, new_path: str) -> bool:
+    def copy_file(self, src: str, dst: str) -> bool:
+        """Скопировать файл/папку."""
         pass
+
