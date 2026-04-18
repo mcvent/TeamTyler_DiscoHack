@@ -134,3 +134,13 @@ class YandexDiskProvider(BaseCloudProvider):
         except Exception as e:
             logger.error(f"Ошибка переименования: {e}")
             return False
+
+    def copy_file(self, src: str, dst: str) -> bool:
+
+        try:
+            self.client.copy(src, dst)
+            self._cache.clear()
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка копирования: {e}")
+            return False
