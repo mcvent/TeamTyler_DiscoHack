@@ -9,6 +9,10 @@ def main() -> None:
     """Запуск приложения."""
 
     app = QApplication(sys.argv)
+
+    font = app.font()
+    font.setPointSize(14)
+    app.setFont(font)
     app.setApplicationName("Cloud Manager")
     app.setOrganizationName("Hackathon Team")
 
