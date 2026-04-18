@@ -125,11 +125,12 @@ class YandexDiskProvider(BaseCloudProvider):
     def get_thumbnail(self, remote_path: str, size: str = "S") -> Optional[bytes]:
         return self.client.get_preview(remote_path, size)
 
-    def move_file(self, src: str, dst: str) -> bool:
-        """Переместить/переименовать файл в Яндекс Диске."""
+    def rename_file(self, old_path: str, new_path: str) -> bool:
+        """Переименование файла."""
         try:
-            self.client.move(src, dst)
+            self.client.move(old_path, new_path)
             self._cache.clear()
             return True
         except Exception as e:
-            raise CloudAPIError(f"Ошибка перемещения: {e}")
+            logger.error(f"Ошибка переименования: {e}")
+            return False
