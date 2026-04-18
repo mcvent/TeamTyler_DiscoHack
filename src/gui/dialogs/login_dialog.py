@@ -43,7 +43,7 @@ class LoginDialog(QDialog):
     def _setup_ui(self) -> None:
         """Настройка UI."""
         self.setWindowTitle("Вход в Яндекс.Диск")
-        self.setFixedSize(400, 200)
+        self.setFixedSize(600, 200)
         self.setModal(True)
 
         layout = QVBoxLayout(self)
@@ -59,14 +59,7 @@ class LoginDialog(QDialog):
         title.setFont(title_font)
         layout.addWidget(title)
 
-        # Описание
-        desc = QLabel(
-            "Будет открыт браузер для авторизации.\n"
-            "После подтверждения вернитесь в приложение."
-        )
-        desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        desc.setWordWrap(True)
-        layout.addWidget(desc)
+
 
         # Прогресс-бар
         self.progress = QProgressBar()
