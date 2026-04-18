@@ -199,3 +199,8 @@ class CloudProviderAdapter(BaseCloudProvider):
         # Сортировка: папки первые
         results.sort(key=lambda x: (not x.is_dir, x.name.lower()))
         return results
+
+    def logout(self) -> None:
+        """Выход из аккаунта."""
+        self._bridge.provider = None
+        self._bridge._init_provider()

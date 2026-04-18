@@ -49,6 +49,7 @@ class MainWindow(QMainWindow):
         self._setup_statusbar()
         self._connect_signals()
         self._load_stylesheet()
+        self._update_auth_status()
 
         # Начальная загрузка
         self._navigate_to_provider('local', self._providers['local'].get_mounts_root())
@@ -63,11 +64,10 @@ class MainWindow(QMainWindow):
         cloud_path.mkdir(parents=True, exist_ok=True)
         cloud_bridge = CloudBridge(cloud_path)
         self._providers['cloud'] = CloudProviderAdapter(cloud_bridge)
-
     def _setup_ui(self) -> None:
         """Настройка основного UI."""
         self.setWindowTitle("Cloud Manager")
-        self.setMinimumSize(1000, 600)
+        self.setMinimumSize(1400, 600)
         self.resize(1200, 800)
 
         central_widget = QWidget()
@@ -78,7 +78,7 @@ class MainWindow(QMainWindow):
         main_layout.setSpacing(0)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
-
+        splitter.setChildrenCollapsible(False)
         # Левая панель
         self.side_bar = SideBar()
         self.side_bar.setMinimumWidth(240)
@@ -146,6 +146,24 @@ class MainWindow(QMainWindow):
         show_hidden_action = QAction("Показывать скрытые файлы", self)
         show_hidden_action.setCheckable(True)
         view_menu.addAction(show_hidden_action)
+
+        account_menu = menubar.addMenu("&Аккаунт")
+
+        self.login_action = QAction("Войти в Яндекс.Диск", self)
+        self.login_action.triggered.connect(self._on_login)
+        account_menu.addAction(self.login_action)
+
+        self.logout_action = QAction("Выйти из Яндекс.Диска", self)
+        self.logout_action.triggered.connect(self._on_logout)
+        self.logout_action.setEnabled(False)
+        account_menu.addAction(self.logout_action)
+
+        account_menu.addSeparator()
+
+        # Статус в меню
+        self.status_action = QAction("Статус: не авторизован", self)
+        self.status_action.setEnabled(False)
+        account_menu.addAction(self.status_action)
 
         # Справка
         help_menu = menubar.addMenu("&Справка")
@@ -504,3 +522,122 @@ class MainWindow(QMainWindow):
         self.address_bar.search_btn.setEnabled(True)
         self.status_bar.showMessage(f" Ошибка поиска: {error}")
         QMessageBox.warning(self, "Ошибка поиска", error)
+
+    def _on_login(self) -> None:
+        """Вход в Яндекс.Диск."""
+        from gui.dialogs.login_dialog import LoginDialog
+
+        dialog = LoginDialog(self)
+        if dialog.exec():
+            token = dialog.get_token()
+            if token:
+                # Сохраняем токен через API
+                from api.providers.yadisk.auth_manager import AuthManager
+                AuthManager.save_token(token)
+
+                # Переинициализируем облачный провайдер
+                cloud_provider = self._providers.get('cloud')
+                if cloud_provider and hasattr(cloud_provider, 'setup_token'):
+                    cloud_provider.setup_token(token)
+
+                # Обновляем UI
+                self._update_auth_status()
+                self.side_bar.refresh_tree()
+
+                QMessageBox.information(self, "Успех", "Вход выполнен успешно")
+
+    def _on_logout(self) -> None:
+        """Выход из Яндекс.Диска."""
+        reply = QMessageBox.question(
+            self,
+            "Подтверждение",
+            "Выйти из аккаунта Яндекс.Диска?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            # Удаляем токен
+            from api.providers.yadisk.auth_manager import AuthManager
+            AuthManager.save_token("")  # Очищаем
+
+            # Сбрасываем провайдер
+            cloud_provider = self._providers.get('cloud')
+            if cloud_provider and hasattr(cloud_provider, 'logout'):
+                cloud_provider.logout()
+
+            # Обновляем UI
+            self._update_auth_status()
+            self.side_bar.refresh_tree()
+
+            # Если сейчас в облаке, переключаемся на локальные диски
+            if self._current_provider == cloud_provider:
+                local_provider = self._providers.get('local')
+                if local_provider:
+                    self._current_provider = local_provider
+                    self._current_path = local_provider.get_root_path()
+                    self._load_directory(self._current_path)
+
+            QMessageBox.information(self, "Успех", "Выход выполнен")
+
+    def _update_auth_status(self) -> None:
+        """Обновление статуса авторизации в меню."""
+        if not hasattr(self, 'status_action'):
+            return
+
+        cloud_provider = self._providers.get('cloud')
+        is_authorized = False
+
+        if cloud_provider and hasattr(cloud_provider, 'has_token'):
+            is_authorized = cloud_provider.has_token()
+
+        if is_authorized:
+            self.status_action.setText("Статус: авторизован")
+            self.login_action.setEnabled(False)
+            self.logout_action.setEnabled(True)
+        else:
+            self.status_action.setText("Статус: не авторизован")
+            self.login_action.setEnabled(True)
+            self.logout_action.setEnabled(False)
+
+    def _on_logout(self) -> None:
+        """Выход из Яндекс.Диска."""
+        reply = QMessageBox.question(
+            self,
+            "Подтверждение",
+            "Выйти из аккаунта Яндекс.Диска?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            # 1. Удаляем токен из keyring
+            try:
+                import keyring
+                keyring.delete_password("DiscoHack", "yandex_token")
+            except Exception as e:
+                print(f"Ошибка удаления из keyring: {e}")
+
+            # 2. Удаляем файл с токеном
+            token_file = Path.home() / '.core-disko' / 'yandex.token'
+            if token_file.exists():
+                token_file.unlink()
+
+            # 3. Сбрасываем провайдер (устанавливаем в None)
+            cloud_provider = self._providers.get('cloud')
+            if cloud_provider:
+                if hasattr(cloud_provider, '_bridge'):
+                    cloud_provider._bridge.provider = None
+
+            # 4. Обновляем UI
+            self._update_auth_status()
+            self.side_bar.refresh_tree()
+
+            # 5. Если сейчас в облаке, переключаемся на локальные диски
+            if self._current_provider == cloud_provider:
+                local_provider = self._providers.get('local')
+                if local_provider:
+                    self._current_provider = local_provider
+                    self._current_path = local_provider.get_root_path()
+                    self._load_directory(self._current_path)
+                    self.address_bar.set_path(self._current_path)
+
+            self.status_bar.showMessage("Выход выполнен")
