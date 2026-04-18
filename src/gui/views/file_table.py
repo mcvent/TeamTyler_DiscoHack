@@ -8,9 +8,9 @@ from PyQt6.QtWidgets import (
     QStackedWidget, QInputDialog
 )
 from PyQt6.QtCore import pyqtSignal, Qt, QPoint, QModelIndex, QSize
-from PyQt6.QtGui import QAction, QIcon, QStandardItemModel, QStandardItem
-from core.local.local_provider import LocalFileSystemProvider
 
+from PyQt6.QtGui import QAction, QIcon, QStandardItemModel, QStandardItem, QKeySequence
+from core.local.local_provider import LocalFileSystemProvider
 from api.common.models import CloudFile
 from api.common.base_provider import BaseCloudProvider
 
@@ -90,12 +90,15 @@ class FileTableView(QWidget):
     delete_requested = pyqtSignal(list)
     download_requested = pyqtSignal(list)
     rename_requested = pyqtSignal(object, str)
+    copy_requested = pyqtSignal(list)
+    paste_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._current_provider: Optional[BaseCloudProvider] = None
         self._current_items: List[CloudFile] = []
-        self._view_mode = "icons"  # ← ИКОНКИ ПО УМОЛЧАНИЮ
+        self._view_mode = "icons"
+        self._current_display_path = ""
         self._setup_ui()
         self._setup_context_menu()
 
@@ -183,10 +186,23 @@ class FileTableView(QWidget):
         self.rename_action = QAction(QIcon.fromTheme("edit-rename"), "Переименовать", self)
         self.rename_action.triggered.connect(self._on_rename)
 
+        # Копировать
+        self.copy_action = QAction(QIcon.fromTheme("edit-copy"), "Копировать", self)
+        self.copy_action.setShortcut(QKeySequence.StandardKey.Copy)
+        self.copy_action.triggered.connect(self._on_copy)
+
+        # Вставить
+        self.paste_action = QAction(QIcon.fromTheme("edit-paste"), "Вставить", self)
+        self.paste_action.setShortcut(QKeySequence.StandardKey.Paste)
+        self.paste_action.triggered.connect(self._on_paste)
+
         self.delete_action = QAction(QIcon.fromTheme("edit-delete"), "Удалить", self)
         self.delete_action.triggered.connect(self._on_delete)
 
         self.context_menu.addAction(self.download_action)
+        self.context_menu.addSeparator()
+        self.context_menu.addAction(self.copy_action)
+        self.context_menu.addAction(self.paste_action)
         self.context_menu.addSeparator()
         self.context_menu.addAction(self.rename_action)
         self.context_menu.addAction(self.delete_action)
@@ -290,31 +306,59 @@ class FileTableView(QWidget):
         items = self.get_selected_items()
         has_selection = len(items) > 0
 
-        # Проверяем, выбран ли корневой элемент
-        is_root = False
-        if has_selection and len(items) == 1:
-            is_root = self._is_root_item(items[0])
-
-        self.download_action.setEnabled(has_selection and not is_root)
-        self.rename_action.setEnabled(has_selection and not is_root and len(items) == 1)
-        self.delete_action.setEnabled(has_selection and not is_root)
+        # Проверяем, находимся ли в mounts://
+        if self._is_mounts_root():
+            self.download_action.setEnabled(False)
+            self.copy_action.setEnabled(False)
+            self.paste_action.setEnabled(False)
+            self.rename_action.setEnabled(False)
+            self.delete_action.setEnabled(False)
+        else:
+            self.download_action.setEnabled(has_selection)
+            self.copy_action.setEnabled(has_selection)
+            self.paste_action.setEnabled(has_selection)
+            self.rename_action.setEnabled(has_selection and len(items) == 1)
+            self.delete_action.setEnabled(has_selection)
 
         if self._view_mode == "table":
             self.context_menu.exec(self.table_view.viewport().mapToGlobal(pos))
         else:
             self.context_menu.exec(self.icon_view.viewport().mapToGlobal(pos))
-
     def _on_download(self) -> None:
         """Скачивание."""
+        if self._is_mounts_root():
+            print("Скачивание запрещено в mounts://")
+            return
+
         items = self.get_selected_items()
         if items:
             self.download_requested.emit(items)
 
     def _on_delete(self) -> None:
         """Удаление."""
+        if self._is_mounts_root():
+            print("Удаление запрещено в mounts://")
+            return
+
         items = self.get_selected_items()
         if items:
             self.delete_requested.emit(items)
+
+        # Проверяем, находимся ли в корне mounts://
+        if self._current_provider and hasattr(self._current_provider, 'get_root_path'):
+            root_path = self._current_provider.get_root_path()
+            current_path = getattr(self, '_current_path', "")
+            if root_path == "mounts://" and current_path == "mounts://":
+                print("Нельзя удалять в корневой директории")
+                return
+
+        # Проверяем, нет ли корневых элементов
+        for item in items:
+            if self._is_root_item(item):
+                print("Нельзя удалить корневой элемент")
+                return
+
+        self.delete_requested.emit(items)
 
     def _on_rename(self) -> None:
         """Переименование выбранного элемента."""
@@ -345,12 +389,69 @@ class FileTableView(QWidget):
         # Корневые элементы имеют специальные имена или пути
         root_names = ["Домашняя папка", "Корень (/)", "/home"]
         root_paths = ["mounts://", "/"]
-
+        if file_item.path == "mounts://":
+            return True
         if file_item.name in root_names:
             return True
         if file_item.path in root_paths:
             return True
         return False
+
+
+    def _is_mounts_root(self) -> bool:
+        """Проверить, находимся ли в корне mounts://."""
+        return self._current_display_path == "mounts://"
+
+    def keyPressEvent(self, event) -> None:
+        """Обработка нажатий клавиш."""
+        if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            if event.key() == Qt.Key.Key_C:
+                # Ctrl+C - копировать
+                self._on_copy()
+                event.accept()
+                return
+            elif event.key() == Qt.Key.Key_V:
+                # Ctrl+V - вставить
+                self._on_paste()
+                event.accept()
+                return
+
+        super().keyPressEvent(event)
+
+    def _on_copy(self) -> None:
+        """Копирование."""
+        if self._is_mounts_root():
+            print("Копирование запрещено в mounts://")
+            return
+
+        items = self.get_selected_items()
+        if items:
+            self._clipboard_items = items.copy()
+            self.copy_requested.emit(items)
+
+    def _on_paste(self) -> None:
+        """Вставить файлы из буфера."""
+        print(f"DEBUG: _on_paste вызван, буфер содержит {len(self._clipboard_items)} элементов")
+
+        if not self._clipboard_items:
+            print("DEBUG: Буфер пуст")
+            return
+
+        self.paste_requested.emit()
+
+    def _is_current_path_root(self) -> bool:
+        """Проверить, находится ли пользователь в корневом пути mounts://."""
+        if hasattr(self._current_provider, 'get_root_path'):
+            root_path = self._current_provider.get_root_path()
+            if root_path == "mounts://":
+                # Нужно знать текущий путь
+                pass
+        return False
+
+
+    def set_current_path(self, path: str) -> None:
+        """Установить текущий путь (для проверки mounts://)."""
+        self._current_display_path = path
 
     def _get_thumbnail(self, file_path: str, size: int = 128) -> QIcon:
         """Получить миниатюру изображения."""
