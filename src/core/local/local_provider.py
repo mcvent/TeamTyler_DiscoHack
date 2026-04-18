@@ -360,5 +360,6 @@ class LocalFileSystemProvider(BaseCloudProvider):
         )
 
     def rename_file(self, old_path: str, new_path: str) -> bool:
+
         Path(old_path).rename(Path(new_path))
         return True

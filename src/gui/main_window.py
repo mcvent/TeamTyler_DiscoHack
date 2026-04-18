@@ -263,6 +263,7 @@ class MainWindow(QMainWindow):
         self.file_table.download_requested.connect(self._on_files_download)
         self.file_table.rename_requested.connect(self._on_file_rename)
 
+
     def _load_stylesheet(self) -> None:
         """Загрузка стилей."""
         try:
@@ -668,6 +669,7 @@ class MainWindow(QMainWindow):
 
     def _on_file_rename(self, file_item, new_name: str) -> None:
         """Переименование файла/папки."""
+
         if not self._current_provider:
             QMessageBox.warning(self, "Ошибка", "Нет активного провайдера")
             return
