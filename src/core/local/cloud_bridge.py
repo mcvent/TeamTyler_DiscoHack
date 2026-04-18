@@ -433,3 +433,28 @@ class CloudBridge:
         except Exception as e:
             print(f"Ошибка удаления: {e}")
             return False
+
+    def sync_cloud_to_local(self, remote_path: str = "/") -> dict:
+        """Синхронизировать новые/изменённые файлы из облака"""
+        result = {'downloaded': [], 'deleted': []}
+
+        try:
+            remote_items = self.provider.list_files(remote_path)
+            remote_files = [item for item in remote_items if not item.is_dir]
+
+            for item in remote_files:
+                local_file = self.local_path / item.path.lstrip('/')
+
+                if not local_file.exists():
+                    if self.download_file(item.path, local_file):
+                        result['downloaded'].append(item.name)
+                else:
+                    local_size = local_file.stat().st_size
+                    if local_size != item.size:
+                        if self.download_file(item.path, local_file):
+                            result['downloaded'].append(f"{item.name} (updated)")
+
+            return result
+        except Exception as e:
+            print(f"Cloud sync error: {e}")
+            return result

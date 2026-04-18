@@ -66,7 +66,8 @@ class CommandHandler:
         token = getpass.getpass("Токен: ")
         if token:
             self.cloud_bridge.save_token(token)
-            return "Токен сохранен! Теперь можно использовать облачные команды"
+            self.cloud_mode = True
+            return "Токен сохранен! Облачный режим включен"
         return "Токен не введен"
 
     def _upload_file(self, args: str) -> str:
@@ -153,11 +154,11 @@ class CommandHandler:
             if not items or (len(items) == 1 and 'Токен не настроен' in items[0]['name']):
                 return "Cloud folder is empty or not connected"
 
-            result = f"\n☁️ CLOUD: {self.cloud_bridge.get_current_path()}\n"
+            result = f"\nCLOUD: {self.cloud_bridge.get_current_path()}\n"
             result += "-" * 60 + "\n"
             for item in items:
                 icon = "📁" if item['is_dir'] else "📄"
-                cloud_icon = "☁️ " if not item.get('downloaded', False) else "✓"
+                cloud_icon = "☁️" if not item.get('downloaded', False) else "✓"
                 result += f"{icon} {cloud_icon}{item['name']:<30} {item['size']}\n"
             result += "-" * 60
             return result
