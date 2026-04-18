@@ -39,6 +39,8 @@ class MainWindow(QMainWindow):
         self._current_path: str = ""
         self._providers: Dict[str, BaseCloudProvider] = {}
         self._list_worker: Optional[ListDirectoryWorker] = None
+        self._search_mode = False
+        self._pre_search_path = ""
 
         self._init_providers()
         self._setup_ui()
@@ -154,7 +156,7 @@ class MainWindow(QMainWindow):
 
     def _setup_toolbar(self) -> None:
         """Настройка панели инструментов."""
-        toolbar = QToolBar("Основная")
+        toolbar = QToolBar("Панель инструментов")
         toolbar.setIconSize(QSize(24, 24))
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
@@ -315,6 +317,15 @@ class MainWindow(QMainWindow):
         if not self._current_provider:
             return
 
+        # Если мы в режиме поиска, выход из него
+        if hasattr(self, '_search_mode') and self._search_mode:
+            self._search_mode = False
+            self._current_path = self._pre_search_path
+            self._load_directory(self._current_path)
+            self.address_bar.set_path(self._current_path)
+            self.status_bar.showMessage(f"Выход из поиска")
+            return
+
         parent_path = None
 
         if hasattr(self._current_provider, 'get_parent_path'):
@@ -467,18 +478,25 @@ class MainWindow(QMainWindow):
 
     def _on_search_finished(self, results: list) -> None:
         """Обработка завершения поиска."""
-        # Скрываем прогресс-бар
         self.progress_bar.setVisible(False)
         self.address_bar.search_btn.setEnabled(True)
 
         if results:
+            # Сохраняем исходный путь для кнопки "вверх"
+            self._search_mode = True
+            self._search_results = results
+            self._pre_search_path = self._current_path  # Запоминаем путь до поиска
+
             self.file_table.set_files(results, self._current_provider)
             self.items_label.setText(f"Найдено: {len(results)}")
-            self.status_bar.showMessage(f" Найдено {len(results)} элементов по запросу")
-            self.address_bar.set_path(f"🔍 Результаты поиска ({len(results)})")
+            self.status_bar.showMessage(f"Найдено {len(results)} элементов")
+            self.address_bar.set_path(f"Результаты поиска ({len(results)})")
+
+            # Кнопка "вверх" должна возвращать к папке, где был поиск
+            self.address_bar.up_btn.setEnabled(True)
         else:
             QMessageBox.information(self, "Поиск", "Ничего не найдено")
-            self.status_bar.showMessage(" Ничего не найдено")
+            self.status_bar.showMessage("Ничего не найдено")
 
     def _on_search_error(self, error: str) -> None:
         """Обработка ошибки поиска."""

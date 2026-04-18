@@ -168,3 +168,34 @@ class CloudProviderAdapter(BaseCloudProvider):
 
         self._bridge.current_path = old_path
         return result
+
+    def search_files(self, path: str, query: str, recursive: bool = True) -> List[CloudFile]:
+        """Рекурсивный поиск в облаке."""
+        results = []
+        query_lower = query.lower()
+
+        def search_recursive(current_path: str, depth: int = 0):
+            if depth > 5:  # Ограничение глубины
+                return
+
+            try:
+                items = self.list_files(current_path)
+                for item in items:
+                    if query_lower in item.name.lower():
+                        results.append(item)
+
+                    if item.is_dir and recursive:
+                        search_recursive(item.path, depth + 1)
+            except Exception:
+                pass
+
+        # Нормализуем путь
+        clean_path = path.replace("yadisk://", "")
+        if not clean_path:
+            clean_path = "/"
+
+        search_recursive(clean_path)
+
+        # Сортировка: папки первые
+        results.sort(key=lambda x: (not x.is_dir, x.name.lower()))
+        return results
