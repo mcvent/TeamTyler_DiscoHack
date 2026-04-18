@@ -253,6 +253,7 @@ class MainWindow(QMainWindow):
 
     def _connect_signals(self) -> None:
         """Подключение сигналов."""
+
         self.side_bar.provider_selected.connect(self._on_provider_selected)
         self.address_bar.search_requested.connect(self._on_search)
         self.address_bar.path_changed.connect(self._on_path_changed)
