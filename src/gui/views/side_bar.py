@@ -38,7 +38,7 @@ class SideBar(QWidget):
         header_layout.setContentsMargins(12, 12, 12, 8)
 
         title = QLabel("Файловые системы")
-        title.setStyleSheet("font-weight: bold; font-size: 13px;")
+        title.setStyleSheet("font-weight: bold; font-size: 18px;")
         header_layout.addWidget(title)
 
         refresh_btn = QPushButton()
