@@ -1,4 +1,3 @@
-# local/cloud_bridge.py
 """
 Мост между консольным проводником и облачным API
 Обеспечивает работу с облаком как с обычной папкой
@@ -9,7 +8,6 @@ import sys
 import subprocess
 from pathlib import Path
 
-# Добавляем путь к api модулю
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from api.manager import CloudManager
@@ -22,12 +20,11 @@ class CloudBridge:
 
     def __init__(self, local_path: Path):
         """
-        Args:
-            local_path: Локальная папка, где будут кэшироваться файлы (например, /home/user/YandexDisk)
+        local_path: Локальная папка, где будут кэшироваться файлы (например, /home/user/YandexDisk)
         """
         self.local_path = local_path
-        self.downloads_path = local_path / 'Downloads'  # ✅ НОВАЯ ПАПКА
-        self.downloads_path.mkdir(parents=True, exist_ok=True)  # ✅ СОЗДАЁМ
+        self.downloads_path = local_path / 'Downloads'
+        self.downloads_path.mkdir(parents=True, exist_ok=True)
         self.manager = CloudManager()
         self.provider = None
         self.current_path = "/"  # Текущий путь в облаке
@@ -38,10 +35,8 @@ class CloudBridge:
 
     def _init_provider(self):
         """Инициализация провайдера Яндекс Диска"""
-        # Регистрируем провайдера
         self.manager.register_provider("yandex", YandexDiskProvider)
 
-        # Пытаемся получить токен из файла
         token = self._load_token()
 
         if token:
@@ -49,13 +44,13 @@ class CloudBridge:
                 provider = YandexDiskProvider()
                 if provider.login(token):
                     self.provider = provider
-                    print("✅ Яндекс Диск подключен")
+                    print("Яндекс Диск подключен")
                 else:
-                    print("❌ Не удалось подключиться к Яндекс Диску")
+                    print("Не удалось подключиться к Яндекс Диску")
             except Exception as e:
-                print(f"❌ Ошибка подключения: {e}")
+                print(f"Ошибка подключения: {e}")
         else:
-            print("⚠️ Токен не найден. Выполните: token_setup")
+            print("Токен не найден. Выполните: token_setup")
 
     def _load_token(self) -> str:
         """Загрузить токен из файла"""
@@ -69,7 +64,7 @@ class CloudBridge:
         token_file = Path.home() / '.core-disko' / 'yandex.token'
         token_file.parent.mkdir(parents=True, exist_ok=True)
         token_file.write_text(token.strip())
-        token_file.chmod(0o600)  # Только владелец может читать
+        token_file.chmod(0o600)
 
         # Переподключаем провайдера
         self._init_provider()
@@ -92,13 +87,12 @@ class CloudBridge:
     def list_directory(self, path: str = None) -> list:
         """
         Получить содержимое облачной папки (без скачивания файлов)
-
         Returns:
             Список словарей с ключами: name, type, size, is_dir, downloaded, path
         """
         if not self.provider:
             return [{
-                'name': '⚠️ Токен не настроен. Выполните: token_setup',
+                'name': 'Токен не настроен. Выполните: token_setup',
                 'type': '[???]',
                 'size': '',
                 'is_dir': False,
@@ -113,7 +107,7 @@ class CloudBridge:
 
             result = []
             for f in files:
-                # Проверяем, скачан ли файл локально
+
                 local_file = self.local_path / f.path.lstrip('/')
 
                 result.append({
@@ -151,12 +145,6 @@ class CloudBridge:
     def change_directory(self, path: str) -> bool:
         """
         Переход в другую облачную папку
-
-        Args:
-            path: Путь для перехода (/, .., Documents, /Documents/Subfolder)
-
-        Returns:
-            True если успешно, False если ошибка
         """
         if not self.provider:
             return False
@@ -179,7 +167,6 @@ class CloudBridge:
             return True
 
         # Переход в подпапку
-        # Нормализуем путь
         if path.startswith('/'):
             new_path = path
         else:
@@ -190,7 +177,6 @@ class CloudBridge:
         # Проверяем, что папка существует
         try:
             files = self.provider.list_files(new_path)
-            # Если успешно получили список - папка существует
             self.current_path = new_path
             return True
         except CloudNotFoundError:
@@ -205,19 +191,12 @@ class CloudBridge:
     def download_file(self, remote_path: str, local_path: Path = None) -> bool:
         """
         Скачать файл из облака в папку Downloads
-
-        Args:
-            remote_path: Путь к файлу в облаке
-            local_path: Локальный путь (опционально, по умолчанию в Downloads)
-
-        Returns:
-            True если успешно, False если ошибка
         """
         if not self.provider:
-            print("❌ Облако не подключено")
+            print("Облако не подключено")
             return False
 
-        # ✅ Если путь не указан - сохраняем в Downloads
+        # Если путь не указан - сохраняем в Downloads
         if local_path is None:
             local_path = self._get_download_path(remote_path)
 
@@ -226,21 +205,21 @@ class CloudBridge:
 
         # Если файл уже есть, спрашиваем
         if local_path.exists():
-            print(f"⚠️ Файл уже существует: {local_path.name}")
+            print(f"Файл уже существует: {local_path.name}")
             response = input("Перезаписать? (y/N/s - пропустить): ").lower()
             if response != 'y':
                 if response == 's':
-                    print(f"⏭️ Пропущен: {remote_path}")
+                    print(f"Пропущен: {remote_path}")
                 return False
 
         try:
-            print(f"📥 Скачивание {remote_path}...")
-            print(f"📁 Сохранение в: {local_path}")
+            print(f"Скачивание {remote_path}...")
+            print(f"Сохранение в: {local_path}")
 
             # Скачиваем с прогрессом
             self.provider.download_file(remote_path, str(local_path), self._progress_callback)
 
-            # ✅ Сохраняем метаданные
+            # Сохраняем метаданные
             file_size = local_path.stat().st_size if local_path.exists() else 0
             self.download_metadata[str(local_path)] = {
                 'remote_path': remote_path,
@@ -250,10 +229,10 @@ class CloudBridge:
             }
             self._save_metadata()
 
-            print(f"\n✅ Скачано: {local_path}")
+            print(f"\nСкачано: {local_path}")
             return True
         except Exception as e:
-            print(f"\n❌ Ошибка скачивания: {e}")
+            print(f"\nОшибка скачивания: {e}")
             return False
 
     def _get_download_path(self, remote_path: str) -> Path:
@@ -262,7 +241,6 @@ class CloudBridge:
         """
         filename = Path(remote_path).name
 
-        # Если файл с таким именем уже есть, добавляем дату
         download_path = self.downloads_path / filename
         if download_path.exists():
             name_without_ext = filename.rsplit('.', 1)[0]
@@ -278,34 +256,33 @@ class CloudBridge:
         if total > 0:
             percent = int(current / total * 100)
             # Используем \r для обновления в одной строке
-            print(f"\r📥 Прогресс: [{percent}%] {current}/{total} байт", end="", flush=True)
+            print(f"\rПрогресс: [{percent}%] {current}/{total} байт", end="", flush=True)
 
     def show_downloads(self) -> str:
         """Показать список скачанных файлов"""
         if not self.downloads_path.exists():
-            return "📁 Папка Downloads пуста"
+            return "Папка Downloads пуста"
 
         files = [f for f in self.downloads_path.iterdir() if f.is_file()]
         if not files:
-            return "📁 Папка Downloads пуста"
+            return "Папка Downloads пуста"
 
-        result = "\n📂 СКАЧАННЫЕ ФАЙЛЫ (YandexDisk/Downloads):\n"
+        result = "\nСКАЧАННЫЕ ФАЙЛЫ (YandexDisk/Downloads):\n"
         result += "-" * 70 + "\n"
 
         for f in sorted(files, key=lambda x: x.stat().st_mtime, reverse=True):
             size = self._format_size(f.stat().st_size)
             modified = datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
 
-            # Проверяем, откуда скачан
             meta = self.download_metadata.get(str(f), {})
             source = meta.get('remote_path', 'неизвестно')
 
-            result += f"📄 {f.name:<35} {size:>10}  {modified}\n"
+            result += f"{f.name:<35} {size:>10}  {modified}\n"
             result += f"   └─ источник: {source}\n"
 
         result += "-" * 70
-        result += f"\n📁 Папка: {self.downloads_path}"
-        result += f"\n📊 Всего файлов: {len(files)}"
+        result += f"\nПапка: {self.downloads_path}"
+        result += f"\nВсего файлов: {len(files)}"
         return result
 
     def clear_downloads(self, older_than_days: int = None) -> str:
@@ -313,7 +290,7 @@ class CloudBridge:
         files = [f for f in self.downloads_path.iterdir() if f.is_file()]
 
         if not files:
-            return "📁 Папка Downloads уже пуста"
+            return "Папка Downloads уже пуста"
 
         if older_than_days:
             from datetime import timedelta
@@ -328,19 +305,19 @@ class CloudBridge:
                     f.unlink()
                     deleted += 1
             self._save_metadata()
-            return f"✅ Удалено {deleted} файлов старше {older_than_days} дней"
+            return f"Удалено {deleted} файлов старше {older_than_days} дней"
 
         # Запрос подтверждения
         count = len(files)
-        response = input(f"⚠️ Удалить все {count} файлов из Downloads? (y/N): ")
+        response = input(f"Удалить все {count} файлов из Downloads? (y/N): ")
         if response.lower() == 'y':
             for f in files:
                 if str(f) in self.download_metadata:
                     del self.download_metadata[str(f)]
                 f.unlink()
             self._save_metadata()
-            return f"✅ Удалено {count} файлов"
-        return "❌ Отменено"
+            return f"Удалено {count} файлов"
+        return "Отменено"
 
     def _load_metadata(self) -> dict:
         """Загрузить метаданные о скачанных файлах"""
@@ -362,15 +339,9 @@ class CloudBridge:
     def open_file(self, filename: str) -> bool:
         """
         Открыть файл из облака (скачать если нужно)
-
-        Args:
-            filename: Имя файла в текущей облачной папке
-
-        Returns:
-            True если успешно, False если ошибка
         """
         if not self.provider:
-            print("❌ Облако не подключено")
+            print("Облако не подключено")
             return False
 
         # Полный путь в облаке
@@ -390,10 +361,10 @@ class CloudBridge:
             subprocess.run(['xdg-open', str(local_file)], check=True)
             return True
         except FileNotFoundError:
-            print("❌ xdg-open не найден. Установите: sudo apt install xdg-utils")
+            print("xdg-open не найден. Установите: sudo apt install xdg-utils")
             return False
         except Exception as e:
-            print(f"❌ Не удалось открыть {filename}: {e}")
+            print(f"Не удалось открыть {filename}: {e}")
             return False
 
     def upload_file(self, local_path: Path, remote_path: str = None) -> bool:
@@ -401,33 +372,27 @@ class CloudBridge:
         Загрузить файл в облако
         """
         if not self.provider:
-            print("❌ Облако не подключено")
+            print("Облако не подключено")
             return False
 
         if remote_path is None:
             remote_path = self.current_path.rstrip('/') + '/' + local_path.name
 
         try:
-            print(f"📤 Загрузка {local_path} -> {remote_path}...")
+            print(f"Загрузка {local_path} -> {remote_path}...")
             self.provider.upload_file(str(local_path), remote_path)
-            print("✅ Загружено")
+            print("Загружено")
             return True
         except Exception as e:
-            print(f"❌ Ошибка загрузки: {e}")
+            print(f"Ошибка загрузки: {e}")
             return False
 
     def create_folder(self, folder_name: str) -> bool:
         """
         Создать папку в облаке
-
-        Args:
-            folder_name: Имя новой папки
-
-        Returns:
-            True если успешно
         """
         if not self.provider:
-            print("❌ Облако не подключено")
+            print("Облако не подключено")
             return False
 
         remote_path = self.current_path.rstrip('/') + '/' + folder_name.lstrip('/')
@@ -435,24 +400,18 @@ class CloudBridge:
 
         try:
             self.provider.create_folder(remote_path)
-            print(f"✅ Папка '{folder_name}' создана")
+            print(f"Папка '{folder_name}' создана")
             return True
         except Exception as e:
-            print(f"❌ Ошибка создания папки: {e}")
+            print(f"Ошибка создания папки: {e}")
             return False
 
     def delete_file(self, filename: str) -> bool:
         """
         Удалить файл/папку в облаке
-
-        Args:
-            filename: Имя файла/папки в текущей облачной папке
-
-        Returns:
-            True если успешно
         """
         if not self.provider:
-            print("❌ Облако не подключено")
+            print("Облако не подключено")
             return False
 
         remote_path = self.current_path.rstrip('/') + '/' + filename.lstrip('/')
@@ -469,8 +428,33 @@ class CloudBridge:
 
         try:
             self.provider.delete_file(remote_path)
-            print(f"✅ '{filename}' удалён")
+            print(f"'{filename}' удалён")
             return True
         except Exception as e:
-            print(f"❌ Ошибка удаления: {e}")
+            print(f"Ошибка удаления: {e}")
             return False
+
+    def sync_cloud_to_local(self, remote_path: str = "/") -> dict:
+        """Синхронизировать новые/изменённые файлы из облака"""
+        result = {'downloaded': [], 'deleted': []}
+
+        try:
+            remote_items = self.provider.list_files(remote_path)
+            remote_files = [item for item in remote_items if not item.is_dir]
+
+            for item in remote_files:
+                local_file = self.local_path / item.path.lstrip('/')
+
+                if not local_file.exists():
+                    if self.download_file(item.path, local_file):
+                        result['downloaded'].append(item.name)
+                else:
+                    local_size = local_file.stat().st_size
+                    if local_size != item.size:
+                        if self.download_file(item.path, local_file):
+                            result['downloaded'].append(f"{item.name} (updated)")
+
+            return result
+        except Exception as e:
+            print(f"Cloud sync error: {e}")
+            return result

@@ -21,6 +21,11 @@ class ConsoleExplorer:
         # ✅ ПОТОМ передаём его в CommandHandler
         self.command_handler = CommandHandler(self.navigator, self.file_ops, self.cloud_bridge)
 
+        if self.cloud_bridge.has_token():
+            print("Яндекс Диск подключен")
+            print("Cloud mode auto-enabled")
+        else:
+            print("Токен не найден. Выполните: token_setup")
     def run(self):
         """Основной цикл программы"""
         clear_screen()
