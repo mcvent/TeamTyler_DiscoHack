@@ -36,7 +36,7 @@ class CloudBridge:
     def _init_provider(self):
         """Инициализация провайдера Яндекс Диска"""
         self.manager.register_provider("yandex", YandexDiskProvider)
-
+        # self.manager = CloudManager
         token = self._load_token()
 
         if token:
@@ -47,10 +47,19 @@ class CloudBridge:
                     print("Яндекс Диск подключен")
                 else:
                     print("Не удалось подключиться к Яндекс Диску")
+                    self.provider = None
+                    self._delete_token_file()
             except Exception as e:
                 print(f"Ошибка подключения: {e}")
+                self.provider = None
         else:
-            print("Токен не найден. Выполните: token_setup")
+            self.provider = None
+
+    def _delete_token_file(self):
+        """Удаление файла с токеном."""
+        token_file = Path.home() / '.core-disko' / 'yandex.token'
+        if token_file.exists():
+            token_file.unlink()
 
     def _load_token(self) -> str:
         """Загрузить токен из файла"""

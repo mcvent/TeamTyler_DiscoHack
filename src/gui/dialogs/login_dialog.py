@@ -43,7 +43,7 @@ class LoginDialog(QDialog):
     def _setup_ui(self) -> None:
         """Настройка UI."""
         self.setWindowTitle("Вход в Яндекс.Диск")
-        # Размер окна входа (начальное состояние)
+
         self.setFixedSize(600, 200)
         self.setModal(True)
 
@@ -59,6 +59,7 @@ class LoginDialog(QDialog):
         title_font.setBold(True)
         title.setFont(title_font)
         layout.addWidget(title)
+
 
         # Прогресс-бар
         self.progress = QProgressBar()
