@@ -208,3 +208,7 @@ class CloudProviderAdapter(BaseCloudProvider):
         """Выход из аккаунта."""
         self._bridge.provider = None
         self._bridge._init_provider()
+
+    def rename_file(self, old_path: str, new_path: str) -> bool:
+        """Переименовать файл/папку в облаке."""
+        return self._bridge.rename_file(old_path, new_path)

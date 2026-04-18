@@ -11,7 +11,7 @@ COMMANDS = {
     'touch': ['touch'],
     'mkdir': ['mkdir', 'md'],
     'rm': ['rm', 'del', 'delete'],
-
+    'rename': ['rename', 'ren', 'mv'],
     # Облачные
     'upload': ['upload', 'put', 'up'],
     'get': ['get', 'download'],
