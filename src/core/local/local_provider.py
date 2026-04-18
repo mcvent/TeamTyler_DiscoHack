@@ -16,7 +16,6 @@ from api.common.base_provider import BaseCloudProvider
 from api.common.models import CloudFile
 from api.common.exceptions import CloudNotFoundError, CloudError
 
-
 class LocalFileSystemProvider(BaseCloudProvider):
     """Провайдер локальной ФС, реализующий интерфейс BaseCloudProvider."""
 
@@ -361,4 +360,16 @@ class LocalFileSystemProvider(BaseCloudProvider):
 
     def rename_file(self, old_path: str, new_path: str) -> bool:
         Path(old_path).rename(Path(new_path))
+        return True
+
+    def copy_file(self, src: str, dst: str) -> bool:
+        """Скопировать файл локально."""
+        import shutil
+        src_path = Path(src)
+        dst_path = Path(dst)
+
+        if src_path.is_dir():
+            shutil.copytree(src_path, dst_path)
+        else:
+            shutil.copy2(src_path, dst_path)
         return True
