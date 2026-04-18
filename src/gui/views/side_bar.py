@@ -38,12 +38,12 @@ class SideBar(QWidget):
         header_layout.setContentsMargins(12, 12, 12, 8)
 
         title = QLabel("Файловые системы")
-        title.setStyleSheet("font-weight: bold; font-size: 13px;")
+        title.setStyleSheet("font-weight: bold; font-size: 18px;")
         header_layout.addWidget(title)
 
         refresh_btn = QPushButton()
         refresh_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
-        refresh_btn.setFixedSize(28, 28)
+        refresh_btn.setFixedSize(32, 32)
         refresh_btn.setToolTip("Обновить")
         refresh_btn.clicked.connect(self._on_refresh_clicked)
         header_layout.addWidget(refresh_btn, alignment=Qt.AlignmentFlag.AlignRight)

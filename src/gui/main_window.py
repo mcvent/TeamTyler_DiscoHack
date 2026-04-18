@@ -147,20 +147,6 @@ class MainWindow(QMainWindow):
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
-        # Вид
-        view_menu = menubar.addMenu("&Вид")
-
-        refresh_action = QAction(QIcon.fromTheme("view-refresh"), "Обновить", self)
-        refresh_action.setShortcut(QKeySequence.StandardKey.Refresh)
-        refresh_action.triggered.connect(self._on_refresh)
-        view_menu.addAction(refresh_action)
-
-        view_menu.addSeparator()
-
-        show_hidden_action = QAction("Показывать скрытые файлы", self)
-        show_hidden_action.setCheckable(True)
-        view_menu.addAction(show_hidden_action)
-
         account_menu = menubar.addMenu("&Аккаунт")
 
         self.login_action = QAction("Войти в Яндекс.Диск", self)
@@ -192,7 +178,7 @@ class MainWindow(QMainWindow):
         toolbar.setIconSize(QSize(24, 24))
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
-        toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+
         toolbar.addSeparator()
 
         # Адресная строка

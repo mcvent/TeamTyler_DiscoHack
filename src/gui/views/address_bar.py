@@ -45,7 +45,7 @@ class AddressBar(QWidget):
         self.search_btn = QPushButton()
         self.search_btn.setIcon(QIcon.fromTheme("system-search"))
         self.search_btn.setToolTip("Поиск")
-        self.search_btn.setFixedSize(32, 32)
+        self.search_btn.setFixedSize(34, 34)
         self.search_btn.clicked.connect(self._on_search_clicked)
         layout.addWidget(self.search_btn)
 
