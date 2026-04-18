@@ -147,7 +147,6 @@ class MainWindow(QMainWindow):
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
-
         account_menu = menubar.addMenu("&Аккаунт")
 
         self.login_action = QAction("Войти в Яндекс.Диск", self)
@@ -179,7 +178,7 @@ class MainWindow(QMainWindow):
         toolbar.setIconSize(QSize(24, 24))
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
-        toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+
         toolbar.addSeparator()
 
         # Адресная строка
@@ -203,6 +202,14 @@ class MainWindow(QMainWindow):
         upload_action.triggered.connect(self._on_upload)
         toolbar.addAction(upload_action)
 
+        download_action = QAction(QIcon.fromTheme("document-save"), "Скачать", self)
+        download_action.triggered.connect(self._on_download)
+        toolbar.addAction(download_action)
+
+        delete_action = QAction(QIcon.fromTheme("edit-delete"), "Удалить", self)
+        delete_action.triggered.connect(self._on_delete)
+        toolbar.addAction(delete_action)
+
         # Кнопка переключения вида
         self.toggle_view_btn = QAction(QIcon.fromTheme("view-list-icons"), "Вид иконками", self)
         self.toggle_view_btn.setCheckable(True)
@@ -218,7 +225,6 @@ class MainWindow(QMainWindow):
             self.file_table.set_view_mode("table")
             self.toggle_view_btn.setIcon(QIcon.fromTheme("view-list-icons"))
             self.toggle_view_btn.setText("Вид иконками")
-
     def _setup_statusbar(self) -> None:
         """Настройка статус-бара."""
         self.status_bar = QStatusBar()

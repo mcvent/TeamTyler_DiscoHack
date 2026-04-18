@@ -43,7 +43,7 @@ class SideBar(QWidget):
 
         refresh_btn = QPushButton()
         refresh_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
-        refresh_btn.setFixedSize(28, 28)
+        refresh_btn.setFixedSize(32, 32)
         refresh_btn.setToolTip("Обновить")
         refresh_btn.clicked.connect(self._on_refresh_clicked)
         header_layout.addWidget(refresh_btn, alignment=Qt.AlignmentFlag.AlignRight)

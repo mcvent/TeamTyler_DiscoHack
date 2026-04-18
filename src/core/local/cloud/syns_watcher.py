@@ -82,7 +82,7 @@ class SyncWatcher:
     def _check_cloud_loop(self):
         """Фоновый цикл проверки облака."""
         while not self._stop_event.is_set():
-            time.sleep(2)
+            time.sleep(30)
 
             if not self.cloud_bridge.has_token():
                 continue
