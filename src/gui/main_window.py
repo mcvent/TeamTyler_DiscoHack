@@ -832,4 +832,3 @@ class MainWindow(QMainWindow):
         progress.operation_finished(True)
         self.status_bar.showMessage(f"Скопировано {success_count} из {len(self._clipboard)} файлов")
         self._on_refresh()
-
