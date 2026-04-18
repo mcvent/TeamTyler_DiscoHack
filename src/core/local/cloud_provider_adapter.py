@@ -136,9 +136,13 @@ class CloudProviderAdapter(BaseCloudProvider):
     def has_token(self) -> bool:
         return self._bridge.has_token()
 
-    def setup_token(self, token: str) -> bool:
+    def setup_token(self, token: str, refresh_callback=None) -> bool:
+        """Настройка токена."""
         self._bridge.save_token(token)
-        return self._bridge.has_token()
+        if self._bridge.has_token():
+            self._bridge.start_sync(refresh_callback)
+            return True
+        return False
 
     def open_file(self, path: str) -> bool:
         """Открыть файл из облака."""

@@ -6,7 +6,7 @@ from typing import Optional, Dict
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QSplitter,
     QMenuBar, QMenu, QToolBar, QStatusBar, QMessageBox,
-    QFileDialog, QSizePolicy, QInputDialog, QLabel
+    QFileDialog, QSizePolicy, QInputDialog, QLabel, QProgressBar
 )
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QAction, QIcon, QKeySequence
@@ -50,20 +50,34 @@ class MainWindow(QMainWindow):
         self._connect_signals()
         self._load_stylesheet()
         self._update_auth_status()
+        self._update_sync_status()
+
 
         # Начальная загрузка
         self._navigate_to_provider('local', self._providers['local'].get_mounts_root())
 
+        cloud_provider = self._providers.get('cloud')
+        if cloud_provider and hasattr(cloud_provider, '_bridge'):
+            if cloud_provider._bridge.has_token() and cloud_provider._bridge._sync_watcher:
+                cloud_provider._bridge._sync_watcher.refresh_callback = self._on_sync_refresh
     def _init_providers(self) -> None:
         """Инициализация провайдеров."""
-        # Локальная ФС
         self._providers['local'] = LocalFileSystemProvider()
 
-        # Яндекс.Диск через CloudBridge
         cloud_path = Path.home() / 'YandexDisk'
         cloud_path.mkdir(parents=True, exist_ok=True)
         cloud_bridge = CloudBridge(cloud_path)
-        self._providers['cloud'] = CloudProviderAdapter(cloud_bridge)
+
+        cloud_adapter = CloudProviderAdapter(cloud_bridge)
+
+        # Устанавливаем callback позже, когда UI будет готов
+        if cloud_bridge.has_token():
+            # Сохраняем callback для later
+            self._pending_sync_callback = True
+
+        self._providers['cloud'] = cloud_adapter
+
+
     def _setup_ui(self) -> None:
         """Настройка основного UI."""
         self.setWindowTitle("Cloud Manager")
@@ -222,6 +236,10 @@ class MainWindow(QMainWindow):
         self.progress_bar.setMaximumHeight(16)
         self.progress_bar.setVisible(False)
         self.status_bar.addPermanentWidget(self.progress_bar)
+
+        self.sync_label = QLabel("Синхр: выкл")
+        self.sync_label.setStyleSheet("color: #757575; padding: 0 8px;")
+        self.status_bar.addPermanentWidget(self.sync_label)
 
         self.items_label = QLabel("Элементов: 0")
         self.status_bar.addPermanentWidget(self.items_label)
@@ -405,14 +423,15 @@ class MainWindow(QMainWindow):
         self._on_refresh()
 
     def _on_download(self) -> None:
-        """Скачивание выбранных файлов."""
+        """Скачивание выбранных файлов в папку Downloads."""
         selected = self.file_table.get_selected_items()
         if not selected:
             QMessageBox.information(self, "Инфо", "Выберите файлы для скачивания")
             return
 
-        dest_dir = QFileDialog.getExistingDirectory(self, "Выберите папку для сохранения")
-        if not dest_dir:
+        cloud_provider = self._providers.get('cloud')
+        if not cloud_provider or not hasattr(cloud_provider, '_bridge'):
+            QMessageBox.warning(self, "Ошибка", "Облачный провайдер не доступен")
             return
 
         progress = ProgressDialog("Скачивание файлов", self)
@@ -424,18 +443,18 @@ class MainWindow(QMainWindow):
             if file_item.is_dir:
                 continue
 
-            progress.set_status(f"Скачивание: {file_item.name}", f"{i+1} из {len(selected)}")
-            local_path = Path(dest_dir) / file_item.name
+            progress.set_status(f"Скачивание: {file_item.name}", f"{i + 1} из {len(selected)}")
 
             try:
-                self._current_provider.download_file(file_item.path, str(local_path))
-                success_count += 1
+                if cloud_provider._bridge.download_file(file_item.path, None):
+                    success_count += 1
             except Exception as e:
                 QMessageBox.warning(self, "Ошибка", f"Не удалось скачать {file_item.name}: {e}")
 
         progress.operation_finished(True)
-        self.status_bar.showMessage(f"Скачано {success_count} из {len(selected)} файлов")
 
+        downloads_path = cloud_provider._bridge.downloads_path
+        self.status_bar.showMessage(f"Скачано {success_count} из {len(selected)} файлов в {downloads_path}")
     def _on_files_download(self, files: list) -> None:
         """Скачивание файлов через сигнал."""
         self._on_download()
@@ -531,53 +550,41 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             token = dialog.get_token()
             if token:
-                # Сохраняем токен через API
                 from api.providers.yadisk.auth_manager import AuthManager
                 AuthManager.save_token(token)
 
-                # Переинициализируем облачный провайдер
                 cloud_provider = self._providers.get('cloud')
                 if cloud_provider and hasattr(cloud_provider, 'setup_token'):
-                    cloud_provider.setup_token(token)
+                    # Передаём callback для обновления
+                    cloud_provider.setup_token(token, self._on_sync_refresh)
 
-                # Обновляем UI
                 self._update_auth_status()
                 self.side_bar.refresh_tree()
+                self._update_sync_status()
 
                 QMessageBox.information(self, "Успех", "Вход выполнен успешно")
 
-    def _on_logout(self) -> None:
-        """Выход из Яндекс.Диска."""
-        reply = QMessageBox.question(
-            self,
-            "Подтверждение",
-            "Выйти из аккаунта Яндекс.Диска?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
+    def _on_sync_refresh(self) -> None:
+        """Callback для обновления GUI при синхронизации."""
+        # Обновляем только если сейчас в облаке
+        cloud_provider = self._providers.get('cloud')
+        if self._current_provider == cloud_provider and self._current_path:
+            # Используем тот же механизм, что и кнопка обновления
+            self._load_directory(self._current_path)
 
-        if reply == QMessageBox.StandardButton.Yes:
-            # Удаляем токен
-            from api.providers.yadisk.auth_manager import AuthManager
-            AuthManager.save_token("")  # Очищаем
-
-            # Сбрасываем провайдер
-            cloud_provider = self._providers.get('cloud')
-            if cloud_provider and hasattr(cloud_provider, 'logout'):
-                cloud_provider.logout()
-
-            # Обновляем UI
-            self._update_auth_status()
-            self.side_bar.refresh_tree()
-
-            # Если сейчас в облаке, переключаемся на локальные диски
-            if self._current_provider == cloud_provider:
-                local_provider = self._providers.get('local')
-                if local_provider:
-                    self._current_provider = local_provider
-                    self._current_path = local_provider.get_root_path()
-                    self._load_directory(self._current_path)
-
-            QMessageBox.information(self, "Успех", "Выход выполнен")
+    def _update_sync_status(self) -> None:
+        """Обновление индикатора синхронизации."""
+        cloud_provider = self._providers.get('cloud')
+        if cloud_provider and hasattr(cloud_provider, '_bridge'):
+            if cloud_provider._bridge.is_sync_running():
+                self.sync_label.setText("Синхр: вкл")
+                self.sync_label.setStyleSheet("color: #4caf50; padding: 0 8px;")
+            else:
+                self.sync_label.setText("Синхр: выкл")
+                self.sync_label.setStyleSheet("color: #757575; padding: 0 8px;")
+        else:
+            self.sync_label.setText("Синхр: выкл")
+            self.sync_label.setStyleSheet("color: #757575; padding: 0 8px;")
 
     def _update_auth_status(self) -> None:
         """Обновление статуса авторизации в меню."""
@@ -609,29 +616,37 @@ class MainWindow(QMainWindow):
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            # 1. Удаляем токен из keyring
+            cloud_provider = self._providers.get('cloud')
+
+            # Останавливаем синхронизацию перед выходом
+            if cloud_provider and hasattr(cloud_provider, '_bridge'):
+                cloud_provider._bridge.stop_sync()
+
+            if hasattr(self, 'sync_label'):
+                self.sync_label.setText("Синхр: выкл")
+                self.sync_label.setStyleSheet("color: #757575; padding: 0 8px;")
+            # Удаляем токен из keyring
             try:
                 import keyring
                 keyring.delete_password("DiscoHack", "yandex_token")
             except Exception as e:
                 print(f"Ошибка удаления из keyring: {e}")
 
-            # 2. Удаляем файл с токеном
+            # Удаляем файл с токеном
             token_file = Path.home() / '.core-disko' / 'yandex.token'
             if token_file.exists():
                 token_file.unlink()
 
-            # 3. Сбрасываем провайдер (устанавливаем в None)
-            cloud_provider = self._providers.get('cloud')
+            # Сбрасываем провайдер
             if cloud_provider:
                 if hasattr(cloud_provider, '_bridge'):
                     cloud_provider._bridge.provider = None
 
-            # 4. Обновляем UI
+            # Обновляем UI
             self._update_auth_status()
             self.side_bar.refresh_tree()
 
-            # 5. Если сейчас в облаке, переключаемся на локальные диски
+            # Если сейчас в облаке, переключаемся на локальные диски
             if self._current_provider == cloud_provider:
                 local_provider = self._providers.get('local')
                 if local_provider:
@@ -641,3 +656,4 @@ class MainWindow(QMainWindow):
                     self.address_bar.set_path(self._current_path)
 
             self.status_bar.showMessage("Выход выполнен")
+            QMessageBox.information(self, "Успех", "Выход выполнен")
