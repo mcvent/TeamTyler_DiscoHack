@@ -19,10 +19,19 @@ class FileTableModel(QStandardItemModel):
 
     def __init__(self):
         super().__init__()
-        self.setHorizontalHeaderLabels(["Имя", "Размер", "Тип"])
+        self.setHorizontalHeaderLabels(["Имя", "Размер", "Тип", "Статус"])
         self._items: List[CloudFile] = []
+        self._downloaded_files = set()
 
-    def set_items(self, items: List[CloudFile]) -> None:
+    def set_downloaded_cache(self, downloads_path: Path) -> None:
+        """Обновить кэш скачанных файлов."""
+        self._downloaded_files.clear()
+        if downloads_path.exists():
+            for f in downloads_path.iterdir():
+                if f.is_file():
+                    self._downloaded_files.add(f.name)
+
+    def set_items(self, items: List[CloudFile], is_cloud: bool = False) -> None:
         """Установка элементов."""
         self._items = items
         self.removeRows(0, self.rowCount())
@@ -36,10 +45,16 @@ class FileTableModel(QStandardItemModel):
                 name_item.setIcon(QIcon.fromTheme("folder"))
                 size_str = ""
                 type_str = "Папка"
+                status_str = ""
             else:
                 name_item.setIcon(self._get_file_icon(item.name))
                 size_str = self._format_size(item.size)
                 type_str = item.mime_type or "Файл"
+                # Определяем статус
+                if not is_cloud:
+                    status_str = "На диске"
+                else:
+                    status_str = "Скачан" if item.name in self._downloaded_files else "В облаке"
 
             size_item = QStandardItem(size_str)
             size_item.setEditable(False)
@@ -47,7 +62,10 @@ class FileTableModel(QStandardItemModel):
             type_item = QStandardItem(type_str)
             type_item.setEditable(False)
 
-            self.appendRow([name_item, size_item, type_item])
+            status_item = QStandardItem(status_str)
+            status_item.setEditable(False)
+
+            self.appendRow([name_item, size_item, type_item, status_item])
 
     def _format_size(self, size: int) -> str:
         """Форматирование размера."""
@@ -202,16 +220,30 @@ class FileTableView(QWidget):
     def _update_icon_view(self) -> None:
         """Обновить отображение иконок."""
         self.icon_view.clear()
+        is_cloud = hasattr(self._current_provider, '_bridge')
+
+        downloaded_files = set()
+        if is_cloud:
+            downloads_path = self._current_provider._bridge.downloads_path
+            if downloads_path.exists():
+                for f in downloads_path.iterdir():
+                    if f.is_file():
+                        downloaded_files.add(f.name)
 
         for item in self._current_items:
             list_item = QListWidgetItem(item.name)
             list_item.setData(Qt.ItemDataRole.UserRole, item)
-            list_item.setToolTip(item.name)
 
             if item.is_dir:
                 list_item.setIcon(QIcon.fromTheme("folder"))
+                list_item.setToolTip(f"{item.name}\nПапка")
             else:
                 list_item.setIcon(QIcon.fromTheme("text-x-generic"))
+                if item.provider_type == "local":
+                    status = "На диске"
+                else:
+                    status = "Скачан" if item.name in downloaded_files else "В облаке"
+                list_item.setToolTip(f"{item.name}\n{self._format_size(item.size)}\n{status}")
 
             self.icon_view.addItem(list_item)
 
@@ -227,13 +259,20 @@ class FileTableView(QWidget):
         """Установка файлов."""
         self._current_provider = provider
         self._current_items = files
-        self.table_model.set_items(files)
+
+        is_cloud = hasattr(provider, '_bridge')
+
+        # Обновляем кэш скачанных файлов если это облачный провайдер
+        if is_cloud:
+            downloads_path = provider._bridge.downloads_path
+            self.table_model.set_downloaded_cache(downloads_path)
+
+        self.table_model.set_items(files, is_cloud)
         self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         # Принудительно показываем иконки
         if self._view_mode == "icons":
             self._update_icon_view()
         else:
-            # Для таблицы данные уже обновлены через table_model.set_items
             pass
 
     def get_selected_items(self) -> List[CloudFile]:

@@ -216,6 +216,7 @@ class CloudBridge:
         # Если путь не указан - сохраняем в Downloads
         if local_path is None:
             local_path = self._get_download_path(remote_path)
+        print(f"[DEBUG] download_file remote: '{remote_path}'")
 
         # Создаём родительские папки
         local_path.parent.mkdir(parents=True, exist_ok=True)
@@ -353,32 +354,30 @@ class CloudBridge:
             json.dump(self.download_metadata, f, indent=2, default=str)
 
     def open_file(self, filename: str) -> bool:
-        """
-        Открыть файл из облака (скачать если нужно)
-        """
+        """Открыть файл из облака (скачать если нужно)."""
         if not self.provider:
-            print("Облако не подключено")
             return False
 
         # Полный путь в облаке
-        remote_path = self.current_path.rstrip('/') + '/' + filename.lstrip('/')
+        if self.current_path == '/':
+            remote_path = '/' + filename.lstrip('/')
+        else:
+            remote_path = self.current_path.rstrip('/') + '/' + filename.lstrip('/')
+
         remote_path = remote_path.replace('//', '/')
+        print(f"[DEBUG] open_file remote_path: {remote_path}")
 
-        # Локальный путь
-        local_file = self.local_path / remote_path.lstrip('/')
+        local_file = self._get_download_path(remote_path)
 
-        # Скачиваем если нет
         if not local_file.exists():
+            print(f"[DEBUG] Downloading to: {local_file}")
             if not self.download_file(remote_path, local_file):
                 return False
 
-        # Открываем файл
         try:
-            subprocess.run(['xdg-open', str(local_file)], check=True)
+            import os
+            os.startfile(str(local_file))
             return True
-        except FileNotFoundError:
-            print("xdg-open не найден. Установите: sudo apt install xdg-utils")
-            return False
         except Exception as e:
             print(f"Не удалось открыть {filename}: {e}")
             return False

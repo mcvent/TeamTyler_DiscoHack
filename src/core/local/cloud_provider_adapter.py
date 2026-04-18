@@ -149,6 +149,15 @@ class CloudProviderAdapter(BaseCloudProvider):
         filename = Path(path).name
         parent = str(Path(path).parent)
 
+        if '/' in path:
+            parts = path.rsplit('/', 1)
+            parent = parts[0] if parts[0] else '/'
+            filename = parts[1]
+        else:
+            parent = '/'
+            filename = path
+
+
         old_path = self._bridge.current_path
         self._bridge.current_path = parent if parent != '.' else '/'
         result = self._bridge.open_file(filename)
