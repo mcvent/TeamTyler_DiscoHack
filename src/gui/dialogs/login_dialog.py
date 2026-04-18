@@ -43,6 +43,7 @@ class LoginDialog(QDialog):
     def _setup_ui(self) -> None:
         """Настройка UI."""
         self.setWindowTitle("Вход в Яндекс.Диск")
+        # Размер окна входа (начальное состояние)
         self.setFixedSize(600, 200)
         self.setModal(True)
 
@@ -58,8 +59,6 @@ class LoginDialog(QDialog):
         title_font.setBold(True)
         title.setFont(title_font)
         layout.addWidget(title)
-
-
 
         # Прогресс-бар
         self.progress = QProgressBar()
@@ -93,6 +92,9 @@ class LoginDialog(QDialog):
 
     def _start_login(self) -> None:
         """Запуск процесса входа."""
+        # Меняем размер окна на время ожидания (уменьшаем)
+        self.setFixedSize(600, 250)
+
         self.login_btn.setEnabled(False)
         self.cancel_btn.setEnabled(False)
         self.progress.setVisible(True)
@@ -109,11 +111,15 @@ class LoginDialog(QDialog):
 
     def _on_login_success(self, token: str) -> None:
         """Успешный вход."""
+        # Возвращаем исходный размер окна
+        self.setFixedSize(600, 200)
         self._token = token
         self.accept()
 
     def _on_login_error(self, error: str) -> None:
         """Ошибка входа."""
+        # Возвращаем исходный размер окна
+        self.setFixedSize(600, 200)
         self.progress.setVisible(False)
         self.status_label.setText(f"Ошибка: {error}")
         self.status_label.setStyleSheet("color: #d32f2f;")
