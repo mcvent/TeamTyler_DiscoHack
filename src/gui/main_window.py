@@ -192,7 +192,7 @@ class MainWindow(QMainWindow):
         toolbar.setIconSize(QSize(24, 24))
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
-
+        toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         toolbar.addSeparator()
 
         # Адресная строка
@@ -223,6 +223,22 @@ class MainWindow(QMainWindow):
         delete_action = QAction(QIcon.fromTheme("edit-delete"), "Удалить", self)
         delete_action.triggered.connect(self._on_delete)
         toolbar.addAction(delete_action)
+
+        # Кнопка переключения вида
+        self.toggle_view_btn = QAction(QIcon.fromTheme("view-list-icons"), "Вид иконками", self)
+        self.toggle_view_btn.setCheckable(True)
+        self.toggle_view_btn.triggered.connect(self._toggle_view)
+        toolbar.addAction(self.toggle_view_btn)
+
+    def _toggle_view(self, checked):
+        if checked:
+            self.file_table.set_view_mode("icons")
+            self.toggle_view_btn.setIcon(QIcon.fromTheme("view-list-details"))
+            self.toggle_view_btn.setText("Вид таблицей")
+        else:
+            self.file_table.set_view_mode("table")
+            self.toggle_view_btn.setIcon(QIcon.fromTheme("view-list-icons"))
+            self.toggle_view_btn.setText("Вид иконками")
 
     def _setup_statusbar(self) -> None:
         """Настройка статус-бара."""

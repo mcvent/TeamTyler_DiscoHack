@@ -11,7 +11,6 @@ from ...common.exceptions import CloudAPIError, CloudQuotaError
 
 
 class YandexDiskProvider(BaseCloudProvider):
-    """Реализация провайдера с кешированием метаданных и поддержкой создания файлов."""
 
     def __init__(self, token: str = None):
         self.client = YandexDiskClient(token)
@@ -34,7 +33,7 @@ class YandexDiskProvider(BaseCloudProvider):
 
     def list_files(self, path: str = "/") -> List[CloudFile]:
         now = time.time()
-        # Проверка кеша
+
         if path in self._cache:
             ts, data = self._cache[path]
             if now - ts < self._cache_ttl:
@@ -61,7 +60,7 @@ class YandexDiskProvider(BaseCloudProvider):
     def create_folder(self, remote_path: str) -> bool:
         try:
             self.client.mkdir(remote_path)
-            self._cache.clear() # Сбрасываем кеш, так как структура изменилась
+            self._cache.clear()
             return True
         except yadisk.exceptions.DirectoryExistsError:
             return True
@@ -80,11 +79,11 @@ class YandexDiskProvider(BaseCloudProvider):
             raise CloudAPIError(f"Ошибка загрузки файла: {e}")
 
     def create_text_file(self, content: str, remote_path: str) -> bool:
-        """Твоя фишка: создание файла напрямую из текста (памяти)."""
+
         try:
             logger.info(f"Создание текстового файла в облаке: {remote_path}")
             file_data = io.BytesIO(content.encode('utf-8'))
-            # Используем прямой вызов api.upload, так как в client.py может не быть обертки под BytesIO
+
             self.client.api.upload(file_data, remote_path, overwrite=True)
             self._cache.clear()
             return True
