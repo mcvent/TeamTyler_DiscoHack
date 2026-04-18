@@ -8,8 +8,9 @@ import sys
 import subprocess
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from .cloud.syns_watcher import SyncWatcher
 
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from api.manager import CloudManager
 from api.providers.yadisk.provider import YandexDiskProvider
 from api.common.exceptions import CloudAuthError, CloudNotFoundError
@@ -27,11 +28,16 @@ class CloudBridge:
         self.downloads_path.mkdir(parents=True, exist_ok=True)
         self.manager = CloudManager()
         self.provider = None
-        self.current_path = "/"  # Текущий путь в облаке
+        self.current_path = "/"
+        self._sync_watcher: Optional[SyncWatcher] = None
         self._init_provider()
 
         self.metadata_file = local_path / '.download_metadata.json'
         self.download_metadata = self._load_metadata()
+
+        if self.has_token():
+            print("[SYNC] Token found, starting sync from __init__")
+            self.start_sync()
 
     def _init_provider(self):
         """Инициализация провайдера Яндекс Диска"""
@@ -78,6 +84,8 @@ class CloudBridge:
         # Переподключаем провайдера
         self._init_provider()
 
+        # if self.has_token():
+        #     self.start_sync()
     def has_token(self) -> bool:
         """Проверить наличие токена и подключения"""
         return self.provider is not None
@@ -214,8 +222,6 @@ class CloudBridge:
 
         # Если файл уже есть, спрашиваем
         if local_path.exists():
-            print(f"Файл уже существует: {local_path.name}")
-            response = input("Перезаписать? (y/N/s - пропустить): ").lower()
             if response != 'y':
                 if response == 's':
                     print(f"Пропущен: {remote_path}")
@@ -466,26 +472,56 @@ class CloudBridge:
             return False
 
     def sync_cloud_to_local(self, remote_path: str = "/") -> dict:
-        """Синхронизировать новые/изменённые файлы из облака"""
-        result = {'downloaded': [], 'deleted': []}
+        """Проверить изменения в облаке (без скачивания)."""
+        result = {'new': [], 'updated': [], 'deleted': []}
+
+        if not self.has_token():
+            return result
 
         try:
             remote_items = self.provider.list_files(remote_path)
-            remote_files = [item for item in remote_items if not item.is_dir]
+            remote_files = {item.path: item for item in remote_items if not item.is_dir}
 
-            for item in remote_files:
-                local_file = self.local_path / item.path.lstrip('/')
+            # Проверяем новые и изменённые
+            for path, item in remote_files.items():
+                local_file = self.local_path / path.lstrip('/')
+
+                if 'Downloads' in local_file.parts:
+                    continue
 
                 if not local_file.exists():
-                    if self.download_file(item.path, local_file):
-                        result['downloaded'].append(item.name)
+                    result['new'].append(item.name)
                 else:
                     local_size = local_file.stat().st_size
                     if local_size != item.size:
-                        if self.download_file(item.path, local_file):
-                            result['downloaded'].append(f"{item.name} (updated)")
+                        result['updated'].append(item.name)
 
             return result
         except Exception as e:
-            print(f"Cloud sync error: {e}")
+            print(f"[SYNC] Cloud check error: {e}")
             return result
+
+    def start_sync(self, refresh_callback=None) -> None:
+        """Запуск фоновой синхронизации."""
+        if not self.has_token():
+            return
+
+        from .cloud.syns_watcher import SyncWatcher
+
+        if self._sync_watcher is None:
+            self._sync_watcher = SyncWatcher(self, self.local_path, refresh_callback)
+
+        if not self._sync_watcher.is_running():
+            self._sync_watcher.start_background()
+            print("[SYNC] Фоновая синхронизация запущена")
+
+    def stop_sync(self) -> None:
+        """Остановка фоновой синхронизации."""
+        if self._sync_watcher:
+            self._sync_watcher.stop()
+            self._sync_watcher = None
+            print("[SYNC] Фоновая синхронизация остановлена")
+
+    def is_sync_running(self) -> bool:
+        """Проверка статуса синхронизации."""
+        return self._sync_watcher is not None and self._sync_watcher.is_running()
