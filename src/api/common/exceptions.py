@@ -1,19 +1,18 @@
 class CloudError(Exception):
-    """Базовое исключение для всех облачных операций."""
     def __init__(self, message: str):
         super().__init__(message)
 
 class CloudAuthError(CloudError):
-    """Ошибка авторизации (401)."""
+    pass
 
 class CloudNotFoundError(CloudError):
-    """Файл или папка не найдены (404)."""
+    pass
 
 class CloudQuotaError(CloudError):
-    """Превышен лимит хранилища (507)."""
+    pass
 
 class CloudRateLimitError(CloudError):
-    """Слишком много запросов (429)."""
+    pass
 
 class CloudAPIError(CloudError):
-    """Общая ошибка API или сети."""
+    pass

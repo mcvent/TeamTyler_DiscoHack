@@ -7,16 +7,13 @@ from ...common.exceptions import (
 
 
 class YandexDiskClient:
-    """Обертка над библиотекой yadisk с обработкой исключений DiscoHack."""
-
     def __init__(self, token: str = None):
         if token:
-            # Очищаем токен от невидимых символов и пробелов
             token = token.strip()
         self.api = yadisk.YaDisk(token=token)
 
     def _handle_exception(self, e: Exception):
-        """Преобразует ошибки библиотеки yadisk в кастомные исключения."""
+
         if isinstance(e, yadisk.exceptions.UnauthorizedError):
             raise CloudAuthError("Невалидный токен")
         if isinstance(e, yadisk.exceptions.NotFoundError):
@@ -37,7 +34,7 @@ class YandexDiskClient:
 
     def upload(self, local_path, remote_path, callback=None):
         try:
-            # yadisk поддерживает callback(current, total)
+
             self.api.upload(local_path, remote_path, overwrite=True, callback=callback)
         except Exception as e:
             self._handle_exception(e)
@@ -81,7 +78,7 @@ class YandexDiskClient:
 
     def get_preview(self, path: str, size: str) -> bytes:
         try:
-            # Возвращает объект ответа, читаем контент
+
             response = self.api.get_preview(path, size=size)
             return response.read()
         except Exception as e:
