@@ -1,5 +1,6 @@
 """Левая панель навигации с провайдерами."""
 from typing import Dict, Optional
+from pathlib import Path
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QTreeView, QLabel,
     QPushButton, QHBoxLayout, QInputDialog, QMessageBox, QStyle
@@ -124,6 +125,16 @@ class SideBar(QWidget):
             # Если это был текущий провайдер, запоминаем его item
             if current_provider == provider:
                 self._last_provider_item = provider_item
+
+            if key == "local":
+                yadisk_path = Path.home() / 'YandexDisk'
+                if yadisk_path.exists():
+                    yadisk_item = QStandardItem("YandexDisk")
+                    yadisk_item.setData(provider, Qt.ItemDataRole.UserRole)
+                    yadisk_item.setData(str(yadisk_path), Qt.ItemDataRole.UserRole + 1)
+                    yadisk_item.setIcon(QIcon.fromTheme("folder"))
+                    yadisk_item.setEditable(False)
+                    provider_item.appendRow(yadisk_item)
 
         self.tree_view.expandAll()
 

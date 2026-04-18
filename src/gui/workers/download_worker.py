@@ -1,4 +1,8 @@
 """Воркер для скачивания файлов в фоне."""
+import os
+import time
+import threading
+import requests
 from PyQt6.QtCore import QThread, pyqtSignal
 import sys
 from pathlib import Path
@@ -10,28 +14,97 @@ from api.common.base_provider import BaseCloudProvider
 class DownloadWorker(QThread):
     """Фоновое скачивание файла."""
 
-    progress = pyqtSignal(int, int)
+    progress = pyqtSignal(int, int)  # current_size, total_size
     finished = pyqtSignal(bool, str)
     error = pyqtSignal(str)
+    cancelled = pyqtSignal()
 
     def __init__(self, provider: BaseCloudProvider, remote_path: str,
-                 local_path: str):
+                 local_path: str, total_size: int = 0):
         super().__init__()
         self.provider = provider
         self.remote_path = remote_path
         self.local_path = local_path
+        self.total_size = total_size
+        self._is_cancelled = False
 
     def run(self) -> None:
         """Выполнение скачивания."""
         try:
-            def progress_callback(current: int, total: int):
-                self.progress.emit(current, total)
+            download_result = {"success": False, "error": None, "done": False}
 
-            success = self.provider.download_file(
-                self.remote_path,
-                self.local_path,
-                progress_callback
-            )
-            self.finished.emit(success, self.local_path)
+            def do_download():
+                try:
+                    self.provider.download_file(
+                        self.remote_path,
+                        self.local_path,
+                        None
+                    )
+                    if not self._is_cancelled:
+                        download_result["success"] = True
+                except Exception as e:
+                    if not self._is_cancelled:
+                        download_result["error"] = str(e)
+                finally:
+                    download_result["done"] = True
+
+            download_thread = threading.Thread(target=do_download, daemon=True)
+            download_thread.start()
+
+            # Отслеживаем размер файла
+            last_size = 0
+            while not download_result["done"] and not self._is_cancelled:
+                if os.path.exists(self.local_path):
+                    current_size = os.path.getsize(self.local_path)
+                    if current_size != last_size:
+                        self.progress.emit(current_size, self.total_size)
+                        last_size = current_size
+                time.sleep(0.3)
+
+            # Если отменено - удаляем недокачанный файл
+            if self._is_cancelled:
+                self._force_stop_download()
+                if os.path.exists(self.local_path):
+                    try:
+                        os.remove(self.local_path)
+                    except:
+                        pass
+                self.cancelled.emit()
+                return
+
+            # Ждем завершения потока скачивания
+            download_thread.join(timeout=2)
+
+            # Финальный размер
+            if os.path.exists(self.local_path) and not self._is_cancelled:
+                final_size = os.path.getsize(self.local_path)
+                self.progress.emit(final_size, self.total_size)
+
+            if download_result["error"]:
+                self.error.emit(download_result["error"])
+            elif not self._is_cancelled:
+                self.finished.emit(download_result["success"], self.local_path)
+
         except Exception as e:
-            self.error.emit(str(e))
+            if not self._is_cancelled:
+                self.error.emit(str(e))
+
+    def _force_stop_download(self):
+        """Принудительная остановка скачивания."""
+        # Удаляем файл во время скачивания - это может прервать операцию
+        if os.path.exists(self.local_path):
+            try:
+                os.remove(self.local_path)
+            except:
+                pass
+
+        # Пытаемся закрыть все открытые соединения
+        try:
+            import gc
+            gc.collect()
+        except:
+            pass
+
+    def cancel(self):
+        """Отменить скачивание."""
+        self._is_cancelled = True
