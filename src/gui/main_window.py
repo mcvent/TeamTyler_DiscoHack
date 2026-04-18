@@ -41,6 +41,7 @@ class MainWindow(QMainWindow):
         self._list_worker: Optional[ListDirectoryWorker] = None
         self._search_mode = False
         self._pre_search_path = ""
+        self._clipboard = []
 
         self._init_providers()
         self._setup_ui()
@@ -174,48 +175,48 @@ class MainWindow(QMainWindow):
 
     def _setup_toolbar(self) -> None:
         """Настройка панели инструментов."""
-        toolbar = QToolBar("Панель инструментов")
-        toolbar.setIconSize(QSize(24, 24))
-        toolbar.setMovable(False)
-        self.addToolBar(toolbar)
-
-        toolbar.addSeparator()
+        self.toolbar = QToolBar("Панель инструментов")
+        self.toolbar.setIconSize(QSize(24, 24))
+        self.toolbar.setMovable(False)
+        self.addToolBar(self.toolbar)
+        self.toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.toolbar.addSeparator()
 
         # Адресная строка
         self.address_bar = AddressBar()
         self.address_bar.setMaximumWidth(600)
-        toolbar.addWidget(self.address_bar)
+        self.toolbar.addWidget(self.address_bar)
 
-        toolbar.addSeparator()
+        self.toolbar.addSeparator()
 
         # Растягиваем тулбар
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        toolbar.addWidget(spacer)
+        self.toolbar.addWidget(spacer)
 
         # Операции с файлами
         new_folder_action = QAction(QIcon.fromTheme("folder-new"), "Новая папка", self)
         new_folder_action.triggered.connect(self._on_new_folder)
-        toolbar.addAction(new_folder_action)
+        self.toolbar.addAction(new_folder_action)
 
-        upload_action = QAction(QIcon.fromTheme("document-open"), "Загрузить", self)
-        upload_action.triggered.connect(self._on_upload)
-        toolbar.addAction(upload_action)
+        self.upload_action = QAction(QIcon.fromTheme("document-open"), "Загрузить", self)
+        self.upload_action.triggered.connect(self._on_upload)
+        self.toolbar.addAction(self.upload_action)
 
-        download_action = QAction(QIcon.fromTheme("document-save"), "Скачать", self)
-        download_action.triggered.connect(self._on_download)
-        toolbar.addAction(download_action)
+        self.download_action = QAction(QIcon.fromTheme("document-save"), "Скачать", self)
+        self.download_action.triggered.connect(self._on_download)
+        self.toolbar.addAction(self.download_action)
 
-        delete_action = QAction(QIcon.fromTheme("edit-delete"), "Удалить", self)
-        delete_action.triggered.connect(self._on_delete)
-        toolbar.addAction(delete_action)
+        self.delete_action = QAction(QIcon.fromTheme("edit-delete"), "Удалить", self)
+        self.delete_action.triggered.connect(self._on_delete)
+        self.toolbar.addAction(self.delete_action)
 
         # Кнопка переключения вида
         self.toggle_view_btn = QAction(QIcon.fromTheme("view-list-details"), "Вид таблицей", self)
         self.toggle_view_btn.setCheckable(True)
         self.toggle_view_btn.setChecked(False)
         self.toggle_view_btn.triggered.connect(self._toggle_view)
-        toolbar.addAction(self.toggle_view_btn)
+        self.toolbar.addAction(self.toggle_view_btn)
 
     def _toggle_view(self, checked):
         """Переключение между таблицей и иконками."""
@@ -255,6 +256,10 @@ class MainWindow(QMainWindow):
         self.file_table.delete_requested.connect(self._on_files_delete)
         self.file_table.download_requested.connect(self._on_files_download)
         self.file_table.rename_requested.connect(self._on_file_rename)
+        self.file_table.copy_requested.connect(self._on_copy_files)
+        print("DEBUG: Сигнал copy_requested подключён")
+        self.file_table.paste_requested.connect(self._on_paste_files)
+
 
     def _load_stylesheet(self) -> None:
         """Загрузка стилей."""
@@ -298,10 +303,21 @@ class MainWindow(QMainWindow):
     def _on_directory_loaded(self, files: list) -> None:
         """Обработка загрузки директории."""
         self.file_table.set_files(files, self._current_provider)
+        self.file_table.set_current_path(self._current_path)
         self.address_bar.set_path(self._current_path)
         self.items_label.setText(f"Элементов: {len(files)}")
         self.status_bar.showMessage(f"Загружено {len(files)} элементов")
+        self._update_toolbar_buttons()
 
+    def _update_toolbar_buttons(self) -> None:
+        """Обновление состояния кнопок тулбара в зависимости от пути."""
+        is_root = self._current_path == "mounts://"
+
+        if hasattr(self, 'download_action'):
+            self.download_action.setEnabled(not is_root)
+
+        if hasattr(self, 'delete_action'):
+            self.delete_action.setEnabled(not is_root)
 
     def _on_directory_error(self, error: str) -> None:
         """Обработка ошибки загрузки."""
@@ -314,12 +330,16 @@ class MainWindow(QMainWindow):
         """Выбор провайдера в боковой панели."""
         self._current_provider = provider
         self._current_path = path
+        self.file_table.set_current_path(path)
         self._load_directory(path)
+        self._update_toolbar_buttons()
 
     def _on_path_changed(self, path: str) -> None:
         """Изменение пути в адресной строке."""
         self._current_path = path
+        self.file_table.set_current_path(path)
         self._load_directory(path)
+        self._update_toolbar_buttons()
 
     def _on_refresh(self) -> None:
         """Обновление текущей папки."""
@@ -424,7 +444,12 @@ class MainWindow(QMainWindow):
         self._on_refresh()
 
     def _on_download(self) -> None:
-        """Скачивание выбранных файлов в папку Downloads."""
+        """Скачивание выбранных файлов."""
+        # Защита: нельзя скачивать в mounts://
+        if self._current_path == "mounts://":
+            QMessageBox.warning(self, "Ошибка", "Скачивание запрещено в корневой директории")
+            return
+
         selected = self.file_table.get_selected_items()
         if not selected:
             QMessageBox.information(self, "Инфо", "Выберите файлы для скачивания")
@@ -481,10 +506,22 @@ class MainWindow(QMainWindow):
 
     def _on_delete(self) -> None:
         """Удаление выбранных файлов."""
+        # Защита: нельзя удалять в mounts://
+        if self._current_path == "mounts://":
+            QMessageBox.warning(self, "Ошибка", "Удаление запрещено в корневой директории")
+            return
+
         selected = self.file_table.get_selected_items()
         if not selected:
             QMessageBox.information(self, "Инфо", "Выберите файлы для удаления")
             return
+        if self._current_path == "mounts://":
+            QMessageBox.warning(self, "Ошибка", "Нельзя удалять в корневой директории mounts://")
+            return
+        for item in selected:
+            if item.path == "mounts://":
+                QMessageBox.warning(self, "Ошибка", "Нельзя удалить корневой элемент")
+                return
 
         names = [f.name for f in selected]
         reply = QMessageBox.question(
@@ -508,6 +545,16 @@ class MainWindow(QMainWindow):
 
         self.status_bar.showMessage(f"Удалено {success_count} из {len(selected)} элементов")
         self._on_refresh()
+
+        if self._current_path == "mounts://":
+            QMessageBox.warning(self, "Ошибка", "Нельзя удалять в корневой директории")
+            return
+
+        # Защита: нельзя удалять корневые элементы
+        for item in selected:
+            if item.path == "mounts://" or item.name in ["Домашняя папка", "Корень (/)", "/home"]:
+                QMessageBox.warning(self, "Ошибка", f"Нельзя удалить системный элемент: {item.name}")
+                return
 
     def _on_files_delete(self, files: list) -> None:
         """Удаление файлов через сигнал."""
@@ -680,6 +727,13 @@ class MainWindow(QMainWindow):
 
     def _on_file_rename(self, file_item, new_name: str) -> None:
         """Переименование файла/папки."""
+        # Защита: нельзя переименовывать в mounts://
+        if self._current_path == "mounts://":
+            QMessageBox.warning(self, "Ошибка", "Переименование запрещено в корневой директории")
+            return
+
+        print(f"DEBUG: _on_file_rename вызван: {file_item.name} -> {new_name}")
+
         if not self._current_provider:
             QMessageBox.warning(self, "Ошибка", "Нет активного провайдера")
             return
@@ -727,3 +781,52 @@ class MainWindow(QMainWindow):
         self._download_worker.error.connect(self._on_download_error)
         self._download_worker.start()
 
+    def _on_copy_files(self, items: list) -> None:
+        """Копирование файлов (сохраняем в буфер)."""
+        print(f"DEBUG: _on_copy_files получил {len(items)} элементов")  # ← ДОБАВИТЬ
+        self._clipboard = items
+        for item in items:
+            print(f"  - {item.name}")  # ← ДОБАВИТЬ
+        self.status_bar.showMessage(f"Скопировано {len(items)} элементов")
+
+    def _on_paste_files(self) -> None:
+        """Вставка скопированных файлов."""
+        if not self._clipboard:
+            QMessageBox.information(self, "Инфо", "Нет скопированных файлов")
+            return
+
+        if not self._current_provider:
+            QMessageBox.warning(self, "Ошибка", "Нет активного провайдера")
+            return
+
+        dest_path = self._current_path
+
+        progress = ProgressDialog("Копирование файлов", self)
+        progress.set_cancellable(False)
+        progress.show()
+
+        success_count = 0
+        for i, item in enumerate(self._clipboard):
+            src_path = item.path
+            name = Path(src_path).name
+            dest = f"{dest_path.rstrip('/')}/{name}"
+
+            progress.set_status(f"Копирование: {name}", f"{i + 1} из {len(self._clipboard)}")
+
+            try:
+                # Копирование в зависимости от типа провайдера
+                if hasattr(self._current_provider, 'copy_file'):
+                    self._current_provider.copy_file(src_path, dest)
+                else:
+                    # Общий способ: скачать и загрузить
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                        self._current_provider.download_file(src_path, tmp.name)
+                        self._current_provider.upload_file(tmp.name, dest)
+                success_count += 1
+            except Exception as e:
+                print(f"Ошибка копирования {name}: {e}")
+
+        progress.operation_finished(True)
+        self.status_bar.showMessage(f"Скопировано {success_count} из {len(self._clipboard)} файлов")
+        self._on_refresh()

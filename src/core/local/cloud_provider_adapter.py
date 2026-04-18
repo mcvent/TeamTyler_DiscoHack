@@ -4,8 +4,7 @@ from pathlib import Path
 
 from api.common.base_provider import BaseCloudProvider
 from api.common.models import CloudFile
-
-
+from api.common.exceptions import CloudError
 class CloudProviderAdapter(BaseCloudProvider):
     """Адаптер для CloudBridge, реализующий интерфейс BaseCloudProvider."""
 
@@ -212,3 +211,14 @@ class CloudProviderAdapter(BaseCloudProvider):
     def rename_file(self, old_path: str, new_path: str) -> bool:
         """Переименовать файл/папку в облаке."""
         return self._bridge.rename_file(old_path, new_path)
+
+    def copy_file(self, src: str, dst: str) -> bool:
+        """Скопировать файл в облаке."""
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            self.download_file(src, tmp.name)
+            self.upload_file(tmp.name, dst)
+            Path(tmp.name).unlink()
+        return True
