@@ -1,0 +1,335 @@
+"""Таблица/иконки с файлами и папками."""
+from typing import List, Optional
+from pathlib import Path
+
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QTableView, QHeaderView,
+    QAbstractItemView, QMenu, QListWidget, QListWidgetItem,
+    QStackedWidget, QInputDialog
+)
+from PyQt6.QtCore import pyqtSignal, Qt, QPoint, QModelIndex, QSize
+from PyQt6.QtGui import QAction, QIcon, QStandardItemModel, QStandardItem
+
+from api.common.models import CloudFile
+from api.common.base_provider import BaseCloudProvider
+
+
+class FileTableModel(QStandardItemModel):
+    """Модель для отображения файлов в таблице."""
+
+    def __init__(self):
+        super().__init__()
+        self.setHorizontalHeaderLabels(["Имя", "Размер", "Тип"])
+        self._items: List[CloudFile] = []
+
+    def set_items(self, items: List[CloudFile]) -> None:
+        """Установка элементов."""
+        self._items = items
+        self.removeRows(0, self.rowCount())
+
+        for item in items:
+            name_item = QStandardItem(item.name)
+            name_item.setData(item, Qt.ItemDataRole.UserRole)
+            name_item.setEditable(False)
+
+            if item.is_dir:
+                name_item.setIcon(QIcon.fromTheme("folder"))
+                size_str = ""
+                type_str = "Папка"
+            else:
+                name_item.setIcon(self._get_file_icon(item.name))
+                size_str = self._format_size(item.size)
+                type_str = item.mime_type or "Файл"
+
+            size_item = QStandardItem(size_str)
+            size_item.setEditable(False)
+
+            type_item = QStandardItem(type_str)
+            type_item.setEditable(False)
+
+            self.appendRow([name_item, size_item, type_item])
+
+    def _format_size(self, size: int) -> str:
+        """Форматирование размера."""
+        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+            if size < 1024:
+                return f"{size:.1f} {unit}"
+            size /= 1024
+        return f"{size:.1f} PB"
+
+    def _get_file_icon(self, filename: str) -> QIcon:
+        """Получить иконку по расширению файла."""
+        ext = Path(filename).suffix.lower()
+        icon_map = {
+            '.jpg': QIcon.fromTheme("image-x-generic"),
+            '.jpeg': QIcon.fromTheme("image-x-generic"),
+            '.png': QIcon.fromTheme("image-x-generic"),
+            '.gif': QIcon.fromTheme("image-x-generic"),
+            '.pdf': QIcon.fromTheme("application-pdf"),
+            '.doc': QIcon.fromTheme("application-msword"),
+            '.docx': QIcon.fromTheme("application-msword"),
+            '.xls': QIcon.fromTheme("application-vnd.ms-excel"),
+            '.xlsx': QIcon.fromTheme("application-vnd.ms-excel"),
+            '.mp3': QIcon.fromTheme("audio-x-generic"),
+            '.mp4': QIcon.fromTheme("video-x-generic"),
+        }
+        return icon_map.get(ext, QIcon.fromTheme("text-x-generic"))
+
+    def get_item(self, row: int) -> Optional[CloudFile]:
+        """Получить элемент по строке."""
+        if 0 <= row < len(self._items):
+            return self._items[row]
+        return None
+
+
+class FileTableView(QWidget):
+    """Виджет таблицы/иконок файлов."""
+
+    file_double_clicked = pyqtSignal(CloudFile)
+    delete_requested = pyqtSignal(list)
+    download_requested = pyqtSignal(list)
+    rename_requested = pyqtSignal(object, str)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._current_provider: Optional[BaseCloudProvider] = None
+        self._current_items: List[CloudFile] = []
+        self._view_mode = "icons"  # ← ИКОНКИ ПО УМОЛЧАНИЮ
+        self._setup_ui()
+        self._setup_context_menu()
+
+    def _setup_ui(self) -> None:
+        """Настройка UI."""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        self.stacked_widget = QStackedWidget()
+
+        # ============ ИКОНКИ (индекс 0) ============
+        self.icon_view = QListWidget()
+        self.icon_view.setViewMode(QListWidget.ViewMode.IconMode)
+        self.icon_view.setIconSize(QSize(64, 64))
+        self.icon_view.setGridSize(QSize(140, 140))
+        self.icon_view.setResizeMode(QListWidget.ResizeMode.Adjust)
+        self.icon_view.setMovement(QListWidget.Movement.Static)
+        self.icon_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.icon_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.icon_view.setSpacing(12)
+        self.icon_view.setWordWrap(True)
+        self.icon_view.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.icon_view.setFlow(QListWidget.Flow.LeftToRight)
+        self.icon_view.setWrapping(True)
+
+        self.icon_view.setStyleSheet("""
+            QListWidget {
+                background-color: #ffffff;
+                outline: none;
+                border: none;
+            }
+            QListWidget::item {
+                border: 1px solid transparent;
+                border-radius: 6px;
+                padding: 8px 4px;
+                margin: 2px;
+            }
+            QListWidget::item:hover {
+                background-color: #f0f0f0;
+                border: 1px solid #d0d0d0;
+            }
+            QListWidget::item:selected {
+                background-color: #1976d2;
+                color: white;
+            }
+            QListWidget::item:selected:hover {
+                background-color: #1565c0;
+            }
+        """)
+
+        self.icon_view.doubleClicked.connect(self._on_icon_double_click)
+        self.icon_view.customContextMenuRequested.connect(self._show_context_menu)
+
+        self.stacked_widget.addWidget(self.icon_view)
+
+        # ============ ТАБЛИЦА (индекс 1) ============
+        self.table_view = QTableView()
+        self.table_view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.table_view.setAlternatingRowColors(False)
+        self.table_view.setSortingEnabled(True)
+        self.table_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table_view.verticalHeader().setVisible(False)
+        self.table_view.horizontalHeader().setStretchLastSection(True)
+        self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self.table_view.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+
+        self.table_model = FileTableModel()
+        self.table_view.setModel(self.table_model)
+
+        self.table_view.doubleClicked.connect(self._on_table_double_click)
+        self.table_view.customContextMenuRequested.connect(self._show_context_menu)
+
+        self.stacked_widget.addWidget(self.table_view)
+
+        layout.addWidget(self.stacked_widget)
+
+    def _setup_context_menu(self) -> None:
+        """Настройка контекстного меню."""
+        self.context_menu = QMenu(self)
+
+        self.download_action = QAction(QIcon.fromTheme("document-save"), "Скачать", self)
+        self.download_action.triggered.connect(self._on_download)
+
+        self.rename_action = QAction(QIcon.fromTheme("edit-rename"), "Переименовать", self)
+        self.rename_action.triggered.connect(self._on_rename)
+
+        self.delete_action = QAction(QIcon.fromTheme("edit-delete"), "Удалить", self)
+        self.delete_action.triggered.connect(self._on_delete)
+
+        self.context_menu.addAction(self.download_action)
+        self.context_menu.addSeparator()
+        self.context_menu.addAction(self.rename_action)
+        self.context_menu.addAction(self.delete_action)
+
+    def set_view_mode(self, mode: str) -> None:
+        """Переключение между таблицей и иконками."""
+        self._view_mode = mode
+        if mode == "table":
+            self.stacked_widget.setCurrentIndex(1)
+        else:
+            self.stacked_widget.setCurrentIndex(0)
+            self._update_icon_view()
+
+    def _update_icon_view(self) -> None:
+        """Обновить отображение иконок."""
+        self.icon_view.clear()
+
+        for item in self._current_items:
+            list_item = QListWidgetItem(item.name)
+            list_item.setData(Qt.ItemDataRole.UserRole, item)
+            list_item.setToolTip(item.name)
+
+            if item.is_dir:
+                list_item.setIcon(QIcon.fromTheme("folder"))
+            else:
+                list_item.setIcon(QIcon.fromTheme("text-x-generic"))
+
+            self.icon_view.addItem(list_item)
+
+    def _format_size(self, size: int) -> str:
+        """Форматирование размера."""
+        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+            if size < 1024:
+                return f"{size:.1f} {unit}"
+            size /= 1024
+        return f"{size:.1f} PB"
+
+    def set_files(self, files: List[CloudFile], provider: BaseCloudProvider) -> None:
+        """Установка файлов."""
+        self._current_provider = provider
+        self._current_items = files
+        self.table_model.set_items(files)
+
+        # Принудительно показываем иконки
+        if self._view_mode == "icons":
+            self._update_icon_view()
+        else:
+            # Для таблицы данные уже обновлены через table_model.set_items
+            pass
+
+    def get_selected_items(self) -> List[CloudFile]:
+        """Получить выбранные элементы (работает в обоих режимах)."""
+        items = []
+
+        if self._view_mode == "table":
+            for index in self.table_view.selectionModel().selectedRows(0):
+                item = self.table_model.get_item(index.row())
+                if item:
+                    items.append(item)
+        else:
+            for list_item in self.icon_view.selectedItems():
+                item = list_item.data(Qt.ItemDataRole.UserRole)
+                if item:
+                    items.append(item)
+
+        return items
+
+    def _on_table_double_click(self, index: QModelIndex) -> None:
+        """Обработка двойного клика в таблице."""
+        item = self.table_model.get_item(index.row())
+        if item:
+            self.file_double_clicked.emit(item)
+
+    def _on_icon_double_click(self, index) -> None:
+        """Обработка двойного клика в иконках."""
+        list_item = self.icon_view.itemFromIndex(index)
+        if list_item:
+            item = list_item.data(Qt.ItemDataRole.UserRole)
+            if item:
+                self.file_double_clicked.emit(item)
+
+    def _show_context_menu(self, pos: QPoint) -> None:
+        """Показ контекстного меню."""
+        items = self.get_selected_items()
+        has_selection = len(items) > 0
+
+        # Проверяем, выбран ли корневой элемент
+        is_root = False
+        if has_selection and len(items) == 1:
+            is_root = self._is_root_item(items[0])
+
+        self.download_action.setEnabled(has_selection and not is_root)
+        self.rename_action.setEnabled(has_selection and not is_root and len(items) == 1)
+        self.delete_action.setEnabled(has_selection and not is_root)
+
+        if self._view_mode == "table":
+            self.context_menu.exec(self.table_view.viewport().mapToGlobal(pos))
+        else:
+            self.context_menu.exec(self.icon_view.viewport().mapToGlobal(pos))
+
+    def _on_download(self) -> None:
+        """Скачивание."""
+        items = self.get_selected_items()
+        if items:
+            self.download_requested.emit(items)
+
+    def _on_delete(self) -> None:
+        """Удаление."""
+        items = self.get_selected_items()
+        if items:
+            self.delete_requested.emit(items)
+
+    def _on_rename(self) -> None:
+        """Переименование выбранного элемента."""
+        items = self.get_selected_items()
+        if len(items) != 1:
+            return
+
+        file_item = items[0]
+
+        # Запрещаем переименование корневых элементов
+        if self._is_root_item(file_item):
+            return
+
+        old_name = file_item.name
+
+        new_name, ok = QInputDialog.getText(
+            self,
+            "Переименовать",
+            f"Введите новое имя для '{old_name}':",
+            text=old_name
+        )
+
+        if ok and new_name and new_name != old_name:
+            self.rename_requested.emit(file_item, new_name)
+
+    def _is_root_item(self, file_item: CloudFile) -> bool:
+        """Проверить, является ли элемент корневым диском."""
+        # Корневые элементы имеют специальные имена или пути
+        root_names = ["Домашняя папка", "Корень (/)", "/home"]
+        root_paths = ["mounts://", "/"]
+
+        if file_item.name in root_names:
+            return True
+        if file_item.path in root_paths:
+            return True
+        return False
