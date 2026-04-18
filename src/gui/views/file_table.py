@@ -228,7 +228,7 @@ class FileTableView(QWidget):
         self._current_provider = provider
         self._current_items = files
         self.table_model.set_items(files)
-
+        self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         # Принудительно показываем иконки
         if self._view_mode == "icons":
             self._update_icon_view()

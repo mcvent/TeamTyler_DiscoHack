@@ -68,9 +68,9 @@ class CloudProviderAdapter(BaseCloudProvider):
                     progress_callback=None) -> bool:
         return self._bridge.upload_file(Path(local_path), remote_path)
 
-    def download_file(self, remote_path: str, local_path: str,
-                      progress_callback=None) -> bool:
-        return self._bridge.download_file(remote_path, Path(local_path))
+    def download_file(self, remote_path: str, local_path: str, progress_callback=None) -> bool:
+        """Скачать файл."""
+        return self._bridge.download_file(remote_path, Path(local_path), progress_callback)
 
     def delete_file(self, remote_path: str) -> bool:
         filename = Path(remote_path).name

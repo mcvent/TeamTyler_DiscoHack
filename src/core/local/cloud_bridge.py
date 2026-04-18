@@ -205,7 +205,7 @@ class CloudBridge:
         """Вернуть текущий путь в облаке"""
         return self.current_path if self.current_path != '/' else '/'
 
-    def download_file(self, remote_path: str, local_path: Path = None) -> bool:
+    def download_file(self, remote_path: str, local_path: Path = None, progress_callback=None) -> bool:
         """
         Скачать файл из облака в папку Downloads
         """
@@ -220,19 +220,20 @@ class CloudBridge:
         # Создаём родительские папки
         local_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Если файл уже есть, спрашиваем
+        # Для GUI не спрашиваем перезапись
         if local_path.exists():
-            if response != 'y':
-                if response == 's':
-                    print(f"Пропущен: {remote_path}")
-                return False
+            # Просто перезаписываем в GUI режиме
+            pass
 
         try:
             print(f"Скачивание {remote_path}...")
             print(f"Сохранение в: {local_path}")
 
+            # Используем переданный callback или внутренний
+            callback = progress_callback if progress_callback else self._progress_callback
+
             # Скачиваем с прогрессом
-            self.provider.download_file(remote_path, str(local_path), self._progress_callback)
+            self.provider.download_file(remote_path, str(local_path), callback)
 
             # Сохраняем метаданные
             file_size = local_path.stat().st_size if local_path.exists() else 0
