@@ -28,7 +28,7 @@ from .views.address_bar import AddressBar
 from .workers import ListDirectoryWorker, DownloadWorker, UploadWorker, SearchWorker
 from .dialogs.progress_dialog import ProgressDialog
 
-from PyQt6.QtWidgets import QProgressBar
+from PyQt6.QtWidgets import QProgressBar, QPushButton
 class MainWindow(QMainWindow):
     """Главное окно облачного менеджера."""
 
@@ -236,13 +236,6 @@ class MainWindow(QMainWindow):
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage("Готово")
-
-        # Прогресс-бар для длительных операций
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setMaximumWidth(200)
-        self.progress_bar.setMaximumHeight(16)
-        self.progress_bar.setVisible(False)
-        self.status_bar.addPermanentWidget(self.progress_bar)
 
         self.sync_label = QLabel("Синхр: выкл")
         self.sync_label.setStyleSheet("color: #757575; padding: 0 8px;")
@@ -467,27 +460,46 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Ошибка", "Облачный провайдер не доступен")
             return
 
-        progress = ProgressDialog("Скачивание файлов", self)
-        progress.set_cancellable(False)
-        progress.show()
+        self._download_queue = [f for f in selected if not f.is_dir]
+        self._download_success = 0
+        self._download_total = len(self._download_queue)
+        self._cloud_provider = cloud_provider
 
-        success_count = 0
-        for i, file_item in enumerate(selected):
-            if file_item.is_dir:
-                continue
+        if self._download_queue:
+            self.status_bar.showMessage(f"Скачивание 0 из {self._download_total}...")
+            self._download_next()
+        else:
+            self.progress_bar.setVisible(False)
+            QMessageBox.information(self, "Инфо", "Нет файлов для скачивания")
 
-            progress.set_status(f"Скачивание: {file_item.name}", f"{i + 1} из {len(selected)}")
+    def _on_download_progress(self, current: int, total: int) -> None:
+        """Обновление прогресса."""
+        if total > 0:
+            current_mb = current / (1024 * 1024)
+            total_mb = total / (1024 * 1024)
+            percent = int(current / total * 100)
+            file_name = self._download_queue[0].name if self._download_queue else ""
+            self.status_bar.showMessage(
+                f"Скачивание: {file_name} - {current_mb:.1f}/{total_mb:.1f} МБ ({percent}%)"
+            )
+        else:
+            current_mb = current / (1024 * 1024)
+            file_name = self._download_queue[0].name if self._download_queue else ""
+            self.status_bar.showMessage(f"Скачивание: {file_name} - {current_mb:.1f} МБ")
 
-            try:
-                if cloud_provider._bridge.download_file(file_item.path, None):
-                    success_count += 1
-            except Exception as e:
-                QMessageBox.warning(self, "Ошибка", f"Не удалось скачать {file_item.name}: {e}")
+    def _on_download_finished(self, success: bool, local_path: str) -> None:
+        """Завершение скачивания одного файла."""
+        if self._download_queue:
+            self._download_queue.pop(0)
 
-        progress.operation_finished(True)
+        if success:
+            self._download_success += 1
 
-        downloads_path = cloud_provider._bridge.downloads_path
-        self.status_bar.showMessage(f"Скачано {success_count} из {len(selected)} файлов в {downloads_path}")
+        self._download_next()
+    def _on_download_error(self, error: str) -> None:
+        """Ошибка скачивания."""
+        print(f"[ERROR] Download failed: {error}")
+        self._download_next()
     def _on_files_download(self, files: list) -> None:
         """Скачивание файлов через сигнал."""
         self._on_download()
@@ -743,6 +755,32 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.warning(self, "Ошибка", f"Не удалось переименовать: {e}")
 
+    def _download_next(self) -> None:
+        """Скачивание следующего файла из очереди."""
+        if not self._download_queue:
+            downloads_path = self._cloud_provider._bridge.downloads_path
+            self.status_bar.showMessage(f"Скачано {self._download_success} из {self._download_total} файлов")
+            self._on_refresh()
+            return
+
+        file_item = self._download_queue[0]
+        current = self._download_success + 1
+
+        self.status_bar.showMessage(f"Скачивание: {file_item.name} ({current} из {self._download_total})")
+
+        local_path = self._cloud_provider._bridge._get_download_path(file_item.path)
+
+        self._download_worker = DownloadWorker(
+            self._cloud_provider,
+            file_item.path,
+            str(local_path),
+            file_item.size
+        )
+        self._download_worker.progress.connect(self._on_download_progress)
+        self._download_worker.finished.connect(self._on_download_finished)
+        self._download_worker.error.connect(self._on_download_error)
+        self._download_worker.start()
+
     def _on_copy_files(self, items: list) -> None:
         """Копирование файлов (сохраняем в буфер)."""
         print(f"DEBUG: _on_copy_files получил {len(items)} элементов")  # ← ДОБАВИТЬ
@@ -763,6 +801,7 @@ class MainWindow(QMainWindow):
 
         dest_path = self._current_path
 
+        from gui.dialogs.progress_dialog import ProgressDialog
         progress = ProgressDialog("Копирование файлов", self)
         progress.set_cancellable(False)
         progress.show()
@@ -776,11 +815,11 @@ class MainWindow(QMainWindow):
             progress.set_status(f"Копирование: {name}", f"{i + 1} из {len(self._clipboard)}")
 
             try:
-                # Копирование в зависимости от типа провайдера
+                # Пытаемся использовать copy_file если есть
                 if hasattr(self._current_provider, 'copy_file'):
                     self._current_provider.copy_file(src_path, dest)
                 else:
-                    # Общий способ: скачать и загрузить
+                    # Fallback: download + upload
                     import tempfile
                     with tempfile.NamedTemporaryFile(delete=False) as tmp:
                         self._current_provider.download_file(src_path, tmp.name)
@@ -788,7 +827,9 @@ class MainWindow(QMainWindow):
                 success_count += 1
             except Exception as e:
                 print(f"Ошибка копирования {name}: {e}")
+                QMessageBox.warning(self, "Ошибка", f"Не удалось скопировать {name}: {e}")
 
         progress.operation_finished(True)
         self.status_bar.showMessage(f"Скопировано {success_count} из {len(self._clipboard)} файлов")
         self._on_refresh()
+

@@ -67,9 +67,9 @@ class CloudProviderAdapter(BaseCloudProvider):
                     progress_callback=None) -> bool:
         return self._bridge.upload_file(Path(local_path), remote_path)
 
-    def download_file(self, remote_path: str, local_path: str,
-                      progress_callback=None) -> bool:
-        return self._bridge.download_file(remote_path, Path(local_path))
+    def download_file(self, remote_path: str, local_path: str, progress_callback=None) -> bool:
+        """Скачать файл."""
+        return self._bridge.download_file(remote_path, Path(local_path), progress_callback)
 
     def delete_file(self, remote_path: str) -> bool:
         filename = Path(remote_path).name
@@ -222,3 +222,27 @@ class CloudProviderAdapter(BaseCloudProvider):
             self.upload_file(tmp.name, dst)
             Path(tmp.name).unlink()
         return True
+
+    def copy_file(self, src: str, dst: str) -> bool:
+        """Скопировать файл в облаке."""
+        import tempfile
+        from pathlib import Path
+
+        try:
+            # Скачиваем во временный файл
+            with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                tmp_path = Path(tmp.name)
+
+            # Скачиваем исходный файл
+            self.download_file(src, str(tmp_path))
+
+            # Загружаем в новое место
+            self.upload_file(str(tmp_path), dst)
+
+            # Удаляем временный файл
+            tmp_path.unlink()
+
+            return True
+        except Exception as e:
+            print(f"Ошибка копирования: {e}")
+            return False
