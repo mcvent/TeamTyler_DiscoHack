@@ -36,7 +36,7 @@ class CloudBridge:
     def _init_provider(self):
         """Инициализация провайдера Яндекс Диска"""
         self.manager.register_provider("yandex", YandexDiskProvider)
-        self.manager = CloudManager
+        # self.manager = CloudManager
         token = self._load_token()
 
         if token:
