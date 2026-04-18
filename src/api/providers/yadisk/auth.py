@@ -1,27 +1,58 @@
+import webbrowser
 import requests
-from ...common.exceptions import CloudAuthError
+import threading
+import time
+from flask import Flask, request
+import logging
+
+app = Flask(__name__)
+auth_state = {"code": None}
+
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)
 
 
-class YandexOAuth:
-    """Логика получения токенов."""
+@app.route('/callback')
+def callback():
+    code = request.args.get('code')
+    if code:
+        auth_state["code"] = code
+        return "<h1>Успешно! Возвращайтесь в приложение.</h1>"
+    return "<h1>Ошибка</h1>"
 
-    @staticmethod
-    def get_auth_url(client_id: str, redirect_uri: str) -> str:
-        return (
-            f"https://oauth.yandex.ru/authorize?response_type=code"
-            f"&client_id={client_id}&redirect_uri={redirect_uri}"
-        )
 
-    @staticmethod
-    def exchange_code(code: str, client_id: str, client_secret: str) -> dict:
-        url = "https://oauth.yandex.ru/token"
-        data = {
-            "grant_type": "authorization_code",
-            "code": code,
-            "client_id": client_id,
-            "client_secret": client_secret,
-        }
-        response = requests.post(url, data=data)
-        if response.status_code != 200:
-            raise CloudAuthError(f"Ошибка обмена кода: {response.text}")
-        return response.json()
+def get_token_via_oauth(client_id, client_secret):
+    global auth_state
+    auth_state["code"] = None
+
+    def run_server():
+        try:
+            app.run(port=8080, use_reloader=False, threaded=True)
+        except:
+            pass
+
+    server_thread = threading.Thread(target=run_server, daemon=True)
+    server_thread.start()
+
+    time.sleep(1)
+    webbrowser.open(f"https://oauth.yandex.ru/authorize?response_type=code&client_id={client_id}")
+
+    # Ждем код
+    while auth_state["code"] is None:
+        time.sleep(0.5)
+
+    # Обмен на токен
+    token_url = "https://oauth.yandex.ru/token"
+    data = {
+        'grant_type': 'authorization_code',
+        'code': auth_state["code"],
+        'client_id': client_id,
+        'client_secret': client_secret
+    }
+
+    response = requests.post(token_url, data=data)
+    if response.status_code == 200:
+        token = response.json().get('access_token')
+        time.sleep(1)
+        return token
+    return None
