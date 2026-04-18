@@ -801,6 +801,7 @@ class MainWindow(QMainWindow):
 
         dest_path = self._current_path
 
+        from gui.dialogs.progress_dialog import ProgressDialog
         progress = ProgressDialog("Копирование файлов", self)
         progress.set_cancellable(False)
         progress.show()
@@ -814,11 +815,11 @@ class MainWindow(QMainWindow):
             progress.set_status(f"Копирование: {name}", f"{i + 1} из {len(self._clipboard)}")
 
             try:
-                # Копирование в зависимости от типа провайдера
+                # Пытаемся использовать copy_file если есть
                 if hasattr(self._current_provider, 'copy_file'):
                     self._current_provider.copy_file(src_path, dest)
                 else:
-                    # Общий способ: скачать и загрузить
+                    # Fallback: download + upload
                     import tempfile
                     with tempfile.NamedTemporaryFile(delete=False) as tmp:
                         self._current_provider.download_file(src_path, tmp.name)
@@ -826,7 +827,9 @@ class MainWindow(QMainWindow):
                 success_count += 1
             except Exception as e:
                 print(f"Ошибка копирования {name}: {e}")
+                QMessageBox.warning(self, "Ошибка", f"Не удалось скопировать {name}: {e}")
 
         progress.operation_finished(True)
         self.status_bar.showMessage(f"Скопировано {success_count} из {len(self._clipboard)} файлов")
         self._on_refresh()
+

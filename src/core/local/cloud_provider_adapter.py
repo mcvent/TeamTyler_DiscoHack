@@ -222,3 +222,27 @@ class CloudProviderAdapter(BaseCloudProvider):
             self.upload_file(tmp.name, dst)
             Path(tmp.name).unlink()
         return True
+
+    def copy_file(self, src: str, dst: str) -> bool:
+        """Скопировать файл в облаке."""
+        import tempfile
+        from pathlib import Path
+
+        try:
+            # Скачиваем во временный файл
+            with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                tmp_path = Path(tmp.name)
+
+            # Скачиваем исходный файл
+            self.download_file(src, str(tmp_path))
+
+            # Загружаем в новое место
+            self.upload_file(str(tmp_path), dst)
+
+            # Удаляем временный файл
+            tmp_path.unlink()
+
+            return True
+        except Exception as e:
+            print(f"Ошибка копирования: {e}")
+            return False
