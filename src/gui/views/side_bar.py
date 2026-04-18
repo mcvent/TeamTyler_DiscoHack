@@ -30,6 +30,8 @@ class SideBar(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
+        self.setMinimumWidth(200)
+
         # Заголовок
         header_widget = QWidget()
         header_layout = QHBoxLayout(header_widget)
@@ -113,7 +115,7 @@ class SideBar(QWidget):
             else:
                 if hasattr(provider, 'has_token') and not provider.has_token():
                     provider_item.setIcon(QIcon.fromTheme("folder-remote"))
-                    provider_item.setText(f"{name} (не подключен)")
+                    # provider_item.setText(f"{name} (не подключен)")
                 else:
                     provider_item.setIcon(QIcon.fromTheme("folder-remote"))
 
@@ -195,3 +197,7 @@ class SideBar(QWidget):
 
         # Эмитим сигнал выбора, чтобы основная панель тоже обновилась
         self.provider_selected.emit(provider, path)
+
+    def refresh_tree(self) -> None:
+        """Публичный метод обновления дерева."""
+        self._on_refresh_clicked()
