@@ -28,6 +28,8 @@ class CommandHandler:
             return self._rm(args)
         elif cmd in COMMANDS['upload']:
             return self._upload_file(args)
+        elif cmd in COMMANDS['rename']:
+            return self._rename(args)
         elif cmd in COMMANDS['get']:
             return self._cloud_download(args)
         elif cmd in COMMANDS['token_setup']:
@@ -223,6 +225,46 @@ class CommandHandler:
                 result += " (cloud sync failed)"
 
         return result
+
+    def _rename(self, args: str) -> str:
+        """Переименовать файл/папку."""
+        if not args:
+            return "Usage: rename <old_name> <new_name>"
+
+        parts = args.split()
+        if len(parts) != 2:
+            return "Usage: rename <old_name> <new_name>"
+
+        old_name = parts[0]
+        new_name = parts[1]
+
+        current_path = self.navigator.get_current_path()
+        old_path = current_path / old_name
+
+        if not old_path.exists():
+            return f"File '{old_name}' does not exist"
+
+        new_path = current_path / new_name
+
+        if new_path.exists():
+            return f"File '{new_name}' already exists"
+
+        try:
+            old_path.rename(new_path)
+            result = f"Renamed '{old_name}' -> '{new_name}' locally"
+
+            # Если облако подключено - переименовываем и там
+            if self.cloud_bridge and self.cloud_bridge.has_token():
+                remote_old = self.cloud_bridge.get_current_path().rstrip('/') + '/' + old_name
+                remote_new = self.cloud_bridge.get_current_path().rstrip('/') + '/' + new_name
+                if self.cloud_bridge.rename_file(remote_old, remote_new):
+                    result += " + in cloud"
+                else:
+                    result += " (cloud rename failed)"
+
+            return result
+        except Exception as e:
+            return f"Error renaming: {e}"
 
     def _touch(self, args: str) -> str:
         """Создать файл (локально + в облаке если подключено)"""

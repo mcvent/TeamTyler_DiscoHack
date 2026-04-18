@@ -211,20 +211,25 @@ class MainWindow(QMainWindow):
         toolbar.addAction(delete_action)
 
         # Кнопка переключения вида
-        self.toggle_view_btn = QAction(QIcon.fromTheme("view-list-icons"), "Вид иконками", self)
+        self.toggle_view_btn = QAction(QIcon.fromTheme("view-list-details"), "Вид таблицей", self)
         self.toggle_view_btn.setCheckable(True)
+        self.toggle_view_btn.setChecked(False)
         self.toggle_view_btn.triggered.connect(self._toggle_view)
         toolbar.addAction(self.toggle_view_btn)
 
     def _toggle_view(self, checked):
+        """Переключение между таблицей и иконками."""
         if checked:
-            self.file_table.set_view_mode("icons")
-            self.toggle_view_btn.setIcon(QIcon.fromTheme("view-list-details"))
-            self.toggle_view_btn.setText("Вид таблицей")
-        else:
+            # Переключаем на таблицу
             self.file_table.set_view_mode("table")
             self.toggle_view_btn.setIcon(QIcon.fromTheme("view-list-icons"))
             self.toggle_view_btn.setText("Вид иконками")
+        else:
+            # Переключаем на иконки
+            self.file_table.set_view_mode("icons")
+            self.toggle_view_btn.setIcon(QIcon.fromTheme("view-list-details"))
+            self.toggle_view_btn.setText("Вид таблицей")
+
     def _setup_statusbar(self) -> None:
         """Настройка статус-бара."""
         self.status_bar = QStatusBar()
@@ -247,6 +252,7 @@ class MainWindow(QMainWindow):
 
     def _connect_signals(self) -> None:
         """Подключение сигналов."""
+        print("DEBUG: Подключение сигналов...")
         self.side_bar.provider_selected.connect(self._on_provider_selected)
         self.address_bar.search_requested.connect(self._on_search)
         self.address_bar.path_changed.connect(self._on_path_changed)
@@ -255,6 +261,8 @@ class MainWindow(QMainWindow):
         self.file_table.file_double_clicked.connect(self._on_file_double_clicked)
         self.file_table.delete_requested.connect(self._on_files_delete)
         self.file_table.download_requested.connect(self._on_files_download)
+        self.file_table.rename_requested.connect(self._on_file_rename)
+        print("DEBUG: Сигнал rename подключен")
 
     def _load_stylesheet(self) -> None:
         """Загрузка стилей."""
@@ -658,3 +666,28 @@ class MainWindow(QMainWindow):
 
             self.status_bar.showMessage("Выход выполнен")
             QMessageBox.information(self, "Успех", "Выход выполнен")
+
+    def _on_file_rename(self, file_item, new_name: str) -> None:
+        """Переименование файла/папки."""
+        print(f"DEBUG: _on_file_rename вызван: {file_item.name} -> {new_name}")
+        if not self._current_provider:
+            QMessageBox.warning(self, "Ошибка", "Нет активного провайдера")
+            return
+
+        old_path = file_item.path
+        parent_path = str(Path(old_path).parent)
+
+        # Формируем новый путь
+        if parent_path == "." or parent_path == "/":
+            new_path = f"/{new_name}"
+        else:
+            new_path = f"{parent_path}/{new_name}"
+
+        try:
+            # Вызываем переименование у провайдера
+            self._current_provider.rename_file(old_path, new_path)
+            self.status_bar.showMessage(f"Переименовано: {file_item.name} -> {new_name}")
+            self._on_refresh()  # Обновляем список
+        except Exception as e:
+            QMessageBox.warning(self, "Ошибка", f"Не удалось переименовать: {e}")
+            

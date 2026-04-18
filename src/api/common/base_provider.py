@@ -43,3 +43,11 @@ class BaseCloudProvider(ABC):
     @abstractmethod
     def get_thumbnail(self, remote_path: str, size: str = "S") -> Optional[bytes]:
         pass
+
+    @abstractmethod
+    def move_file(self, src: str, dst: str) -> bool:
+        pass
+
+    @abstractmethod
+    def rename_file(self, old_path: str, new_path: str) -> bool:
+        pass

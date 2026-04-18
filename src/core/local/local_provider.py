@@ -358,3 +358,8 @@ class LocalFileSystemProvider(BaseCloudProvider):
             mime_type=mime_type,
             file_id=str(entry)
         )
+
+    def rename_file(self, old_path: str, new_path: str) -> bool:
+        print(f"DEBUG local: rename_file {old_path} -> {new_path}")  # ← исправить rint на print
+        Path(old_path).rename(Path(new_path))
+        return True
