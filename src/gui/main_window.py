@@ -267,6 +267,7 @@ class MainWindow(QMainWindow):
         print("DEBUG: Сигнал copy_requested подключён")
         self.file_table.paste_requested.connect(self._on_paste_files)
 
+
     def _load_stylesheet(self) -> None:
         """Загрузка стилей."""
         try:
@@ -720,6 +721,7 @@ class MainWindow(QMainWindow):
             return
 
         print(f"DEBUG: _on_file_rename вызван: {file_item.name} -> {new_name}")
+
         if not self._current_provider:
             QMessageBox.warning(self, "Ошибка", "Нет активного провайдера")
             return

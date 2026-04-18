@@ -8,7 +8,9 @@ from PyQt6.QtWidgets import (
     QStackedWidget, QInputDialog
 )
 from PyQt6.QtCore import pyqtSignal, Qt, QPoint, QModelIndex, QSize
+
 from PyQt6.QtGui import QAction, QIcon, QStandardItemModel, QStandardItem, QKeySequence
+from core.local.local_provider import LocalFileSystemProvider
 from api.common.models import CloudFile
 from api.common.base_provider import BaseCloudProvider
 
@@ -215,18 +217,35 @@ class FileTableView(QWidget):
             self._update_icon_view()
 
     def _update_icon_view(self) -> None:
-        """Обновить отображение иконок."""
-        self.icon_view.clear()
+        """Обновить отображение иконок с миниатюрами."""
+        from core.local.local_provider import LocalFileSystemProvider
 
+        self.icon_view.clear()
         for item in self._current_items:
             list_item = QListWidgetItem(item.name)
             list_item.setData(Qt.ItemDataRole.UserRole, item)
-            list_item.setToolTip(item.name)
 
             if item.is_dir:
                 list_item.setIcon(QIcon.fromTheme("folder"))
             else:
-                list_item.setIcon(QIcon.fromTheme("text-x-generic"))
+                # Для изображений показываем миниатюру
+                ext = Path(item.name).suffix.lower()
+                image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']
+
+                if ext in image_extensions and isinstance(self._current_provider, LocalFileSystemProvider):
+                    # Для локальных файлов - реальная миниатюра
+                    icon = self._get_thumbnail(item.path, 128)
+                    list_item.setIcon(icon)
+                else:
+                    # Для облачных файлов или других типов - стандартная иконка
+                    list_item.setIcon(QIcon.fromTheme("text-x-generic"))
+
+            # Добавляем размер под иконкой
+            if not item.is_dir:
+                size_text = self._format_size(item.size)
+                list_item.setToolTip(f"{item.name}\nРазмер: {size_text}")
+            else:
+                list_item.setToolTip(f"{item.name}\nПапка")
 
             self.icon_view.addItem(list_item)
 
@@ -378,6 +397,7 @@ class FileTableView(QWidget):
             return True
         return False
 
+
     def _is_mounts_root(self) -> bool:
         """Проверить, находимся ли в корне mounts://."""
         return self._current_display_path == "mounts://"
@@ -432,3 +452,29 @@ class FileTableView(QWidget):
     def set_current_path(self, path: str) -> None:
         """Установить текущий путь (для проверки mounts://)."""
         self._current_display_path = path
+
+    def _get_thumbnail(self, file_path: str, size: int = 128) -> QIcon:
+        """Получить миниатюру изображения."""
+        from PyQt6.QtGui import QPixmap
+        from PyQt6.QtCore import QSize
+
+        # Проверяем расширение
+        ext = Path(file_path).suffix.lower()
+        image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']
+
+        if ext not in image_extensions:
+            return QIcon.fromTheme("text-x-generic")
+
+        # Пытаемся загрузить миниатюру
+        try:
+            pixmap = QPixmap(file_path)
+            if not pixmap.isNull():
+                # Масштабируем с сохранением пропорций
+                scaled_pixmap = pixmap.scaled(size, size,
+                                              Qt.AspectRatioMode.KeepAspectRatio,
+                                              Qt.TransformationMode.SmoothTransformation)
+                return QIcon(scaled_pixmap)
+        except Exception as e:
+            print(f"Не удалось создать миниатюру для {file_path}: {e}")
+
+        return QIcon.fromTheme("image-x-generic")
