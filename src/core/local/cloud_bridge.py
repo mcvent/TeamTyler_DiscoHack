@@ -443,6 +443,28 @@ class CloudBridge:
             print(f"Ошибка удаления: {e}")
             return False
 
+    def rename_file(self, old_path: str, new_path: str) -> bool:
+        """Переименовать файл/папку в облаке."""
+        if not self.provider:
+            print("Облако не подключено")
+            return False
+
+        try:
+            # Используем move_file для переименования
+            self.provider.move_file(old_path, new_path)
+
+            # Обновляем локальный кэш
+            local_old = self.local_path / old_path.lstrip('/')
+            local_new = self.local_path / new_path.lstrip('/')
+            if local_old.exists():
+                local_old.rename(local_new)
+
+            print(f"Renamed '{old_path}' -> '{new_path}' in cloud")
+            return True
+        except Exception as e:
+            print(f"Rename error: {e}")
+            return False
+
     def sync_cloud_to_local(self, remote_path: str = "/") -> dict:
         """Синхронизировать новые/изменённые файлы из облака"""
         result = {'downloaded': [], 'deleted': []}

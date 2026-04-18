@@ -5,7 +5,7 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QTableView, QHeaderView,
     QAbstractItemView, QMenu, QListWidget, QListWidgetItem,
-    QStackedWidget
+    QStackedWidget, QInputDialog
 )
 from PyQt6.QtCore import pyqtSignal, Qt, QPoint, QModelIndex, QSize
 from PyQt6.QtGui import QAction, QIcon, QStandardItemModel, QStandardItem
@@ -88,12 +88,13 @@ class FileTableView(QWidget):
     file_double_clicked = pyqtSignal(CloudFile)
     delete_requested = pyqtSignal(list)
     download_requested = pyqtSignal(list)
+    rename_requested = pyqtSignal(object, str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._current_provider: Optional[BaseCloudProvider] = None
         self._current_items: List[CloudFile] = []
-        self._view_mode = "table"
+        self._view_mode = "icons"  # ← ИКОНКИ ПО УМОЛЧАНИЮ
         self._setup_ui()
         self._setup_context_menu()
 
@@ -102,25 +103,54 @@ class FileTableView(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # Стек для переключения между видами
         self.stacked_widget = QStackedWidget()
 
-        # ============ ИКОНКИ ============
+        # ============ ИКОНКИ (индекс 0) ============
         self.icon_view = QListWidget()
         self.icon_view.setViewMode(QListWidget.ViewMode.IconMode)
         self.icon_view.setIconSize(QSize(64, 64))
-        self.icon_view.setGridSize(QSize(100, 100))
+        self.icon_view.setGridSize(QSize(140, 140))
         self.icon_view.setResizeMode(QListWidget.ResizeMode.Adjust)
+        self.icon_view.setMovement(QListWidget.Movement.Static)
         self.icon_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.icon_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.icon_view.setSpacing(10)
+        self.icon_view.setSpacing(12)
+        self.icon_view.setWordWrap(True)
+        self.icon_view.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.icon_view.setFlow(QListWidget.Flow.LeftToRight)
+        self.icon_view.setWrapping(True)
+
+        self.icon_view.setStyleSheet("""
+            QListWidget {
+                background-color: #ffffff;
+                outline: none;
+                border: none;
+            }
+            QListWidget::item {
+                border: 1px solid transparent;
+                border-radius: 6px;
+                padding: 8px 4px;
+                margin: 2px;
+            }
+            QListWidget::item:hover {
+                background-color: #f0f0f0;
+                border: 1px solid #d0d0d0;
+            }
+            QListWidget::item:selected {
+                background-color: #1976d2;
+                color: white;
+            }
+            QListWidget::item:selected:hover {
+                background-color: #1565c0;
+            }
+        """)
 
         self.icon_view.doubleClicked.connect(self._on_icon_double_click)
         self.icon_view.customContextMenuRequested.connect(self._show_context_menu)
 
         self.stacked_widget.addWidget(self.icon_view)
 
-        # ============ ТАБЛИЦА ============
+        # ============ ТАБЛИЦА (индекс 1) ============
         self.table_view = QTableView()
         self.table_view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -140,8 +170,6 @@ class FileTableView(QWidget):
 
         self.stacked_widget.addWidget(self.table_view)
 
-
-
         layout.addWidget(self.stacked_widget)
 
     def _setup_context_menu(self) -> None:
@@ -151,46 +179,39 @@ class FileTableView(QWidget):
         self.download_action = QAction(QIcon.fromTheme("document-save"), "Скачать", self)
         self.download_action.triggered.connect(self._on_download)
 
+        self.rename_action = QAction(QIcon.fromTheme("edit-rename"), "Переименовать", self)
+        self.rename_action.triggered.connect(self._on_rename)
+
         self.delete_action = QAction(QIcon.fromTheme("edit-delete"), "Удалить", self)
         self.delete_action.triggered.connect(self._on_delete)
 
         self.context_menu.addAction(self.download_action)
         self.context_menu.addSeparator()
+        self.context_menu.addAction(self.rename_action)
         self.context_menu.addAction(self.delete_action)
 
     def set_view_mode(self, mode: str) -> None:
         """Переключение между таблицей и иконками."""
         self._view_mode = mode
         if mode == "table":
-            self.stacked_widget.setCurrentIndex(0)
-        else:
             self.stacked_widget.setCurrentIndex(1)
+        else:
+            self.stacked_widget.setCurrentIndex(0)
             self._update_icon_view()
 
     def _update_icon_view(self) -> None:
         """Обновить отображение иконок."""
         self.icon_view.clear()
+
         for item in self._current_items:
             list_item = QListWidgetItem(item.name)
             list_item.setData(Qt.ItemDataRole.UserRole, item)
+            list_item.setToolTip(item.name)
 
             if item.is_dir:
                 list_item.setIcon(QIcon.fromTheme("folder"))
             else:
-                ext = Path(item.name).suffix.lower()
-                if ext in ['.jpg', '.jpeg', '.png', '.gif']:
-                    list_item.setIcon(QIcon.fromTheme("image-x-generic"))
-                elif ext == '.pdf':
-                    list_item.setIcon(QIcon.fromTheme("application-pdf"))
-                else:
-                    list_item.setIcon(QIcon.fromTheme("text-x-generic"))
-
-            # Добавляем размер под иконкой
-            if not item.is_dir:
-                size_text = self._format_size(item.size)
-                list_item.setToolTip(f"{item.name}\nРазмер: {size_text}")
-            else:
-                list_item.setToolTip(f"{item.name}\nПапка")
+                list_item.setIcon(QIcon.fromTheme("text-x-generic"))
 
             self.icon_view.addItem(list_item)
 
@@ -207,13 +228,16 @@ class FileTableView(QWidget):
         self._current_provider = provider
         self._current_items = files
         self.table_model.set_items(files)
-        self._update_icon_view()
 
-        # Настройка ширины колонок
-        self.table_view.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        # Принудительно показываем иконки
+        if self._view_mode == "icons":
+            self._update_icon_view()
+        else:
+            # Для таблицы данные уже обновлены через table_model.set_items
+            pass
 
     def get_selected_items(self) -> List[CloudFile]:
-        """Получить выбранные элементы."""
+        """Получить выбранные элементы (работает в обоих режимах)."""
         items = []
 
         if self._view_mode == "table":
@@ -245,9 +269,17 @@ class FileTableView(QWidget):
 
     def _show_context_menu(self, pos: QPoint) -> None:
         """Показ контекстного меню."""
-        has_selection = len(self.get_selected_items()) > 0
-        self.download_action.setEnabled(has_selection)
-        self.delete_action.setEnabled(has_selection)
+        items = self.get_selected_items()
+        has_selection = len(items) > 0
+
+        # Проверяем, выбран ли корневой элемент
+        is_root = False
+        if has_selection and len(items) == 1:
+            is_root = self._is_root_item(items[0])
+
+        self.download_action.setEnabled(has_selection and not is_root)
+        self.rename_action.setEnabled(has_selection and not is_root and len(items) == 1)
+        self.delete_action.setEnabled(has_selection and not is_root)
 
         if self._view_mode == "table":
             self.context_menu.exec(self.table_view.viewport().mapToGlobal(pos))
@@ -265,3 +297,39 @@ class FileTableView(QWidget):
         items = self.get_selected_items()
         if items:
             self.delete_requested.emit(items)
+
+    def _on_rename(self) -> None:
+        """Переименование выбранного элемента."""
+        items = self.get_selected_items()
+        if len(items) != 1:
+            return
+
+        file_item = items[0]
+
+        # Запрещаем переименование корневых элементов
+        if self._is_root_item(file_item):
+            return
+
+        old_name = file_item.name
+
+        new_name, ok = QInputDialog.getText(
+            self,
+            "Переименовать",
+            f"Введите новое имя для '{old_name}':",
+            text=old_name
+        )
+
+        if ok and new_name and new_name != old_name:
+            self.rename_requested.emit(file_item, new_name)
+
+    def _is_root_item(self, file_item: CloudFile) -> bool:
+        """Проверить, является ли элемент корневым диском."""
+        # Корневые элементы имеют специальные имена или пути
+        root_names = ["Домашняя папка", "Корень (/)", "/home"]
+        root_paths = ["mounts://", "/"]
+
+        if file_item.name in root_names:
+            return True
+        if file_item.path in root_paths:
+            return True
+        return False
