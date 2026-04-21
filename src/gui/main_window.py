@@ -355,10 +355,6 @@ class MainWindow(QMainWindow):
             self._load_directory(self._current_path)
             return
 
-        # Показываем прогресс-бар
-        self.progress_bar.setVisible(True)
-        self.progress_bar.setRange(0, 0)  # Бесконечный прогресс
-        self.status_bar.showMessage(f"🔍 Поиск '{query}'...")
 
         # Блокируем кнопку поиска
         self.address_bar.search_btn.setEnabled(False)
@@ -469,7 +465,7 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage(f"Скачивание 0 из {self._download_total}...")
             self._download_next()
         else:
-            self.progress_bar.setVisible(False)
+
             QMessageBox.information(self, "Инфо", "Нет файлов для скачивания")
 
     def _on_download_progress(self, current: int, total: int) -> None:
@@ -581,10 +577,7 @@ class MainWindow(QMainWindow):
         )
 
     def _on_search_finished(self, results: list) -> None:
-        """Обработка завершения поиска."""
-        self.progress_bar.setVisible(False)
         self.address_bar.search_btn.setEnabled(True)
-
         if results:
             # Сохраняем исходный путь для кнопки "вверх"
             self._search_mode = True
@@ -603,8 +596,7 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage("Ничего не найдено")
 
     def _on_search_error(self, error: str) -> None:
-        """Обработка ошибки поиска."""
-        self.progress_bar.setVisible(False)
+
         self.address_bar.search_btn.setEnabled(True)
         self.status_bar.showMessage(f" Ошибка поиска: {error}")
         QMessageBox.warning(self, "Ошибка поиска", error)
